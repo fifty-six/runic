@@ -6,6 +6,7 @@ module Parser
     , Decl(..)
     , Expr(..)
     , Value(..)
+    , BinOp(..)
     , Identifier
     , Parameter(..)
     )
@@ -46,31 +47,34 @@ data Value =
     | IExtern Identifier
     deriving (Show, Eq)
 
-data Expr =   Lambda [Parameter] ReturnType Expr
-            | Val Value
-            | StringLiteral Text
-            | Add Expr Expr
-            | Mul Expr Expr
-            | Sub Expr Expr
-            | Div Expr Expr
-            | LessThan Expr Expr
-            | LeEqTo Expr Expr
-            | GreaterThan Expr Expr
-            | GrEqTo Expr Expr
-            | EqualTo Expr Expr
-            | Identifier Text
-            -- Call (func, params)
-            | Call Expr [Expr]
-            | IntLit Int
-            | FloatLit Float
-            | BoolLit Bool
-            | UnitLit
-            | Neg Expr
-            | And Expr Expr
-            | Or Expr Expr
-            | If Expr Expr Expr
-            | Do [Expr]
-            deriving (Show, Eq)
+data BinOp = Add
+           | Sub
+           | Mul
+           | Div
+           | LessThan
+           | LeEqTo
+           | GreaterThan
+           | GrEqTo
+           | EqualTo
+           | And
+           | Or
+           deriving (Show, Eq)
+
+data Expr =   -- Lambda [Parameter] ReturnType Expr
+            Val Value
+          | StringLiteral Text
+          | Operator BinOp Expr Expr
+          | Identifier Text
+          -- Call (func, params)
+          | Call Expr [Expr]
+          | IntLit Int
+          | FloatLit Float
+          | BoolLit Bool
+          | UnitLit
+          | Neg Expr
+          | If Expr Expr Expr
+          | Do [Expr]
+          deriving (Show, Eq)
 
 -- util
 
@@ -142,18 +146,20 @@ funP = do
 
 expr :: Parser Expr
 expr =
-    choice [ try add
-           , try sub
-           , try mul
+    choice [
+             try $ parens expr
+           , try (binop "+" Add)
+           , try (binop "-" Sub)
+           , try (binop "*" Mul)
            , try (binop "<" LessThan)
            , try (binop ">" GreaterThan)
            , try (binop ">=" GrEqTo)
            , try (binop "<=" LeEqTo)
            , try (binop "==" EqualTo)
-           , try divP
-           , try andP
-           , try orP
-           , try func
+           , try (binop "/" Div)
+           , try (binop "and" And)
+           , try (binop "or" Or)
+           -- , try func
            , stringLiteral
            , Identifier <$> try identifier
            , try call
@@ -164,7 +170,6 @@ expr =
            , try unit
            , int
            , bool
-           , parens expr
            ]
 
 neg :: Parser Expr
@@ -185,35 +190,24 @@ int = lexeme $ IntLit <$> L.decimal
 float :: Parser Expr
 float = lexeme $ FloatLit <$> L.float
 
-binop :: Text -> (Expr -> Expr -> Expr) -> Parser Expr
-binop sym ctor = parens (symbol sym *> (ctor <$> expr <*> expr))
-
-add :: Parser Expr
-add = binop "+" Add
-
-sub :: Parser Expr
-sub = binop "-" Sub
-
-mul :: Parser Expr
-mul = binop "*" Mul
-
-divP :: Parser Expr
-divP = binop "/" Div
-
-andP :: Parser Expr
-andP = binop "and" And
-
-orP :: Parser Expr
-orP = binop "or" Or
+binop :: Text -> BinOp -> Parser Expr
+binop sym op = parens $ symbol sym *> (Operator op <$> expr <*> expr)
 
 doP :: Parser Expr
-doP = symbol "do" *> (Do <$> many expr)
+doP = do
+    void $ symbol "do" *> symbol "{"
+
+    let v = Do <$> (many (expr <* symbol ";") <|> (try . sequence $ [expr]))
+
+    void $ symbol "}"
+
+    v
 
 ifP :: Parser Expr
 ifP = symbol "if" *> (If <$> expr <*> expr <*> expr)
 
 call :: Parser Expr
-call = parens $ do
+call = do
     void $ symbol "call"
 
     f <- expr
@@ -229,15 +223,15 @@ stringLiteral = do
     -- stolen trick: use Haskell's string parsing to deal with escapes
     pure . StringLiteral $ read ('"' : cs str ++ "\"")
 
-func :: Parser Expr
-func = parens $ symbol "fun" *> (
-        Lambda
-            <$> many param
-            <*> return_type
-            <*> (symbol "->" *> expr)
-    )
-    where
-    return_type = identifier
+-- func :: Parser Expr
+-- func = parens $ symbol "fun" *> (
+--         Lambda
+--             <$> many param
+--             <*> return_type
+--             <*> (symbol "->" *> expr)
+--     )
+--     where
+--     return_type = identifier
 
 param :: Parser Parameter
 param = parens (Parameter <$> identifier <*> (symbol ":" *> identifier))

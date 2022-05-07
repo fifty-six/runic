@@ -1,7 +1,10 @@
-module Interpreter where
+module Interpreter (
+    run1
+) 
+where 
 
 import Prelude hiding (id)
-import Parser (Decl (..), Expr (..), Value(..), Identifier, Parameter (Parameter))
+import Parser (Decl (..), Expr (..), BinOp(..), Value(..), Identifier, Parameter (Parameter))
 import qualified Data.Map.Strict as Map
 import Data.Text (Text)
 import Control.Monad.Trans.Except (ExceptT, throwE)
@@ -82,7 +85,7 @@ notBoolErr :: Text -> Text -> Text -> Interpreter a
 notBoolErr a b c = throwE $ TypeError (printf "Expected boolean to %s of %s, got %s" a b c)
 
 run :: Expr -> Interpreter Value
-run Lambda {} = undefined
+-- run Lambda {} = undefined
 run (Val v) = pure v
 run UnitLit = pure IUnit
 run (If cond e1 e2) = do
@@ -154,29 +157,30 @@ run (Identifier i) = do
         -- ExternId id -> (Maybe.fromJust $ L.find ((== id) . fst) externs)
 
 run (StringLiteral t)     = pure $ IString t
-run (LessThan lhs rhs)    = runIntOp (<) "<" IBool lhs rhs
-run (GreaterThan lhs rhs) = runIntOp (>) ">" IBool lhs rhs
-run (LeEqTo lhs rhs)      = runIntOp (<=) "<=" IBool lhs rhs
-run (GrEqTo lhs rhs)      = runIntOp (>=) ">=" IBool lhs rhs
-run (Add lhs rhs)         = runIntOp (+) "+" IInt lhs rhs
-run (Sub lhs rhs)         = runIntOp (-) "-" IInt lhs rhs
-run (Mul lhs rhs)         = runIntOp (*) "*" IInt lhs rhs
-run (Div lhs rhs)         = runIntOp div "/" IInt lhs rhs
-run (EqualTo lhs rhs)     = (IBool ... (==)) <$> run lhs <*> run rhs
-run (And lhs rhs) = do
+run (Operator LessThan lhs rhs)    = runIntOp (<) "<" IBool lhs rhs
+run (Operator GreaterThan lhs rhs) = runIntOp (>) ">" IBool lhs rhs
+run (Operator LeEqTo lhs rhs)      = runIntOp (<=) "<=" IBool lhs rhs
+run (Operator GrEqTo lhs rhs)      = runIntOp (>=) ">=" IBool lhs rhs
+run (Operator Add lhs rhs)         = runIntOp (+) "+" IInt lhs rhs
+run (Operator Sub lhs rhs)         = runIntOp (-) "-" IInt lhs rhs
+run (Operator Mul lhs rhs)         = runIntOp (*) "*" IInt lhs rhs
+run (Operator Div lhs rhs)         = runIntOp div "/" IInt lhs rhs
+run (Operator EqualTo lhs rhs)     = (IBool ... (==)) <$> run lhs <*> run rhs
+run (Operator And lhs rhs) = do
     lhs' <- run lhs
+    rhs' <- run rhs
 
     case lhs' of
         IBool False -> pure $ IBool False
         IBool True -> do
-            rhs' <- run rhs
+            -- rhs' <- run rhs
 
             case rhs' of
                 IBool b -> pure $ IBool b
                 a -> notBoolErr "rhs" "and" (typeStr a)
 
         a -> notBoolErr "lhs" "and" (typeStr a)
-run (Or lhs rhs) = do
+run (Operator Or lhs rhs) = do
     lhs' <- run lhs
 
     case lhs' of
