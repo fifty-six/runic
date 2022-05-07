@@ -18,7 +18,7 @@ conf_layout:
   lconfig_indentWhereSpecial: true
   lconfig_hangingTypeSignature: false
   lconfig_allowSingleLineExportList: false
-  lconfig_cols: 120
+  lconfig_cols: 100
 conf_forward:
   options_ghc: []
 conf_obfuscate: false

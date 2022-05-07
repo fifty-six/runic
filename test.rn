@@ -7,7 +7,7 @@ fn main -> unit = do {
 
 fn fib (x: i32) -> i32 = 
     if (<= x 1) 
-        1
+        do { 1; }
         (+ 
             (call fib (- x 1))
             (call fib (- x 2))
@@ -15,7 +15,7 @@ fn fib (x: i32) -> i32 =
 
 
 fn fac (x: i32) -> i32 = 
-    if (<= x 1) 
+    if (and (<= x 1) do { call print 11; true; })
         1 
         (* x (call fac (- x 1)))
 

@@ -168,7 +168,10 @@ unit :: Parser Expr
 unit = symbol "()" $> UnitLit
 
 bool :: Parser Expr
-bool = BoolLit <$> (True <$ lexeme (symbol "true") <|> False <$ lexeme (symbol "false"))
+bool = BoolLit <$> (true <|> false)
+  where
+    true  = True <$ lexeme (symbol "true")
+    false = False <$ lexeme (symbol "false")
 
 extern :: Parser Decl
 extern = symbol "extern" *> (Extern <$> identifier <*> many param <*> identifier)
@@ -186,18 +189,18 @@ doP :: Parser Expr
 doP = do
     void $ symbol "do" *> symbol "{"
 
-    let v = Do <$> (many (expr <* symbol ";") <|> (try . sequence $ [expr]))
+    v <- Do <$> many (expr <* symbol ";")
 
     void $ symbol "}"
 
-    v
+    pure v
 
 ifP :: Parser Expr
 ifP = symbol "if" *> (If <$> expr <*> expr <*> expr)
 
 call :: Parser Expr
 call = symbol "call" *> (Call <$> f <*> params)
-    where
+  where
     f      = expr
     params = many expr
 
