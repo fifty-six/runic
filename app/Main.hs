@@ -1,16 +1,16 @@
 module Main where
 
-import Text.Pretty.Simple (pPrint)
-import Text.Megaparsec (parse)
-import Interpreter (run1)
-import Parser (pDecls)
-import System.Environment
-import qualified Data.Text as T
-import Text.Megaparsec.Error (errorBundlePretty)
-import Control.Monad (when)
-import Data.Text.IO (hPutStrLn)
-import System.IO (stderr)
-import Control.Monad.Except (guard)
+import           Control.Monad                  ( when )
+import           Control.Monad.Except           ( guard )
+import qualified Data.Text                     as T
+import           Data.Text.IO                   ( hPutStrLn )
+import           Interpreter                    ( run1 )
+import           Parser                         ( pDecls )
+import           System.Environment
+import           System.IO                      ( stderr )
+import           Text.Megaparsec                ( parse )
+import           Text.Megaparsec.Error          ( errorBundlePretty )
+import           Text.Pretty.Simple             ( pPrint )
 
 main :: IO ()
 main = do
@@ -20,14 +20,13 @@ main = do
         hPutStrLn stderr "Usage: [exe] file"
         guard False
 
-    let (x:_) = args
+    let (x : _) = args
 
     contents <- readFile x
 
-    case parse pDecls x $ T.pack contents of 
-        Left parseE -> 
-            hPutStrLn stderr . T.pack $ errorBundlePretty parseE
-        Right decls -> do
+    case parse pDecls x $ T.pack contents of
+        Left  parseE -> hPutStrLn stderr . T.pack $ errorBundlePretty parseE
+        Right decls  -> do
             -- pPrint decls
             ran <- run1 decls
 
