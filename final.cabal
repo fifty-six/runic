@@ -51,6 +51,7 @@ executable final
                       , InstanceSigs
                       , KindSignatures
                       , LambdaCase
+                      , RecordWildCards
                       , TupleSections
                       , FlexibleInstances
                       , FlexibleContexts

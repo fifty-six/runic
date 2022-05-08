@@ -2,6 +2,7 @@ module Interpreter
     ( run1
     ) where
 
+import           Control.Exception              ( assert )
 import           Control.Monad                  ( foldM
                                                 , when
                                                 )
@@ -33,6 +34,7 @@ data Var = E Expr | F [Identifier] Expr
 data InterpreterError
     = NotInScope String
     | TypeError String
+    | InternalError String
     | MissingMain
     | MainNotAFunction
     deriving (Show)
@@ -118,7 +120,9 @@ run (Neg      e) = do
         IInt   i -> pure $ IInt (-i)
         IFloat i -> pure $ IFloat (-i)
         _        -> throw $ TypeError "tried to negate non-float/int"
-run (Do exprs     ) = foldM (\acc a -> run a) undefined exprs
+run (Do exprs) = do
+    assert (not . null $ exprs) $ pure ()
+    foldM (\acc a -> run a) undefined exprs
 run (Call f paramV) = do
     f' <- run f
 
@@ -141,7 +145,7 @@ run (Call f paramV) = do
                 Nothing -> throw . NotInScope $ printf "Extern function %s does not exist!" i
                 Just ef -> pure $ snd ef
 
-            when (length paramV /= 1) (throw $ TypeError "L + ratio")
+            when (length paramV /= 1) (throw $ InternalError "unimplemented: multi-args externs!")
 
             run (head paramV) >>= ef
         _ -> throw $ TypeError "Tried to call a non-function!"

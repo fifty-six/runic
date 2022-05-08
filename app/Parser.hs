@@ -65,7 +65,7 @@ data BinOp
     | EqualTo
     | And
     | Or
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)
 
 data Expr -- Lambda [Parameter] ReturnType Expr
     = Val Value

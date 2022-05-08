@@ -2,6 +2,7 @@ module Main where
 
 import           Control.Monad                  ( when )
 import           Control.Monad.Except           ( guard )
+import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 import           Data.Text.IO                   ( hPutStrLn )
 import           Interpreter                    ( run1 )
@@ -11,12 +12,15 @@ import           System.IO                      ( stderr )
 import           Text.Megaparsec                ( parse )
 import           Text.Megaparsec.Error          ( errorBundlePretty )
 import           Text.Pretty.Simple             ( pPrint )
+import           Typecheck                      ( runSemant
+                                                , typecheck
+                                                )
 
 main :: IO ()
 main = do
     args <- getArgs
 
-    when (length args /= 1) $ do
+    when (length args > 1) $ do
         hPutStrLn stderr "Usage: [exe] file"
         guard False
 
@@ -26,8 +30,10 @@ main = do
 
     case parse pDecls x $ T.pack contents of
         Left  parseE -> hPutStrLn stderr . T.pack $ errorBundlePretty parseE
-        Right decls  -> do
-            -- pPrint decls
-            ran <- run1 decls
-
-            either pPrint pPrint ran
+        Right decls  -> case fst $ flip runSemant M.empty $ typecheck decls of
+            Left  err    -> pPrint err
+            Right sdecls -> do
+                pPrint decls
+                pPrint sdecls
+                ran <- run1 decls
+                either pPrint pPrint ran
