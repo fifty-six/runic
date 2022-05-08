@@ -135,7 +135,7 @@ typecheck decls = do
                 params' <- parseParams params
 
                 forM_ (zip params params') $ \(Parameter n _, t) -> S.modify $ M.insert n t
-            --
+
             _ -> pure ()
 
         decl' <- typecheckDecl decl
@@ -161,8 +161,8 @@ internalLookupFunc id' params = do
 
 typecheckDecl :: Decl -> Semant SDecl
 typecheckDecl (Function id' params ret e) = do
-    (   params', ret') <- internalLookupFunc id' params
-    e'@(te     , _   ) <- typecheck' e
+    (params', ret') <- internalLookupFunc id' params
+    (e'     , te  ) <- check e
 
     unless (te == ret') $ do
         throw $ TypeError { got = te, expected = ret', containingExpr = e, errorExpr = e }
@@ -174,9 +174,14 @@ typecheckDecl (Extern id' params ret) = do
     pure $ SExtern id' params' ret'
 
 typecheckDecl (Let id' t expr) = do
-    expr'@(texpr, _) <- typecheck' expr
+    (expr', texpr) <- check expr
 
     pure $ SLet id' texpr expr'
+
+check :: Expr -> Semant (SExpr, Type)
+check a = do
+    r@(tr, _) <- typecheck' a
+    pure (r, tr)
 
 typecheck' :: Expr -> Semant SExpr
 -- Val should only be used by the interpreter.
@@ -186,20 +191,21 @@ typecheck' (IntLit        i) = pure (I32, SIntLit i)
 typecheck' (FloatLit      f) = pure (F32, SFloatLit f)
 typecheck' (BoolLit       b) = pure (Bool, SBoolLit b)
 typecheck' UnitLit           = pure (Unit, SUnitLit)
+
 typecheck' e@(Neg i)         = do
-    i'@(ti, _) <- typecheck' i
+    (i', ti) <- check i
 
     unless (ti == I32) $ do
         throw TypeError { expected = I32, got = ti, errorExpr = i, containingExpr = e }
 
     pure (ti, SNeg i')
---
-typecheck' e@(Operator op lhs rhs) = do
-    lhs'@(tlhs, _) <- typecheck' lhs
-    rhs'@(trhs, _) <- typecheck' rhs
 
-    unless (tlhs == trhs)
-        $ throw TypeError { expected = tlhs, got = trhs, errorExpr = rhs, containingExpr = e }
+typecheck' e@(Operator op lhs rhs) = do
+    (lhs', tlhs) <- check lhs
+    (rhs', trhs) <- check rhs
+
+    unless (tlhs == trhs) $ do
+        throw TypeError { expected = tlhs, got = trhs, errorExpr = rhs, containingExpr = e }
 
     let assertOfType t = unless (tlhs == t) $ do
             throw TypeError { expected = t, got = tlhs, errorExpr = e, containingExpr = e }
@@ -213,7 +219,7 @@ typecheck' e@(Operator op lhs rhs) = do
     tOp <- maybe (error . printf "Invalid operator %s!" $ show op) pure $ M.lookup op opRes
 
     pure (tOp, SOperator op lhs' rhs')
---
+
 typecheck' e@(Identifier i) = do
     m <- S.get
 
@@ -222,44 +228,41 @@ typecheck' e@(Identifier i) = do
         Nothing -> throw $ IdentifierNotInScope { var = i, varExpr = e }
 
     pure (t, SIdentifier i)
---
+
 typecheck' e@(Call fn params) = do
     -- We just need to check that we have a function here
-    fn'@(tfn, _  ) <- typecheck' fn
+    (fn', tfn) <- check fn
 
-    (    fps, ret) <- case tfn of
+    (fps, ret) <- case tfn of
         Func a b -> pure (a, b)
         _        -> throw NotAFunction { fnExpr = fn, callExpr = e }
 
     -- Now we need to check our params are well-formed.
     m       <- S.get
     params' <- forM (zip params fps) $ \(p, fp_t) -> do
-        p'@(tp, _) <- typecheck' p
+        (p', tp) <- check p
 
-        unless (tp == fp_t) $ throw $ TypeError { expected       = fp_t
-                                                , got            = tp
-                                                , errorExpr      = p
-                                                , containingExpr = e
-                                                }
+        unless (tp == fp_t) $ do
+            throw TypeError { expected = fp_t, got = tp, errorExpr = p, containingExpr = e }
 
         pure p'
 
     pure (ret, SCall fn' params')
---
+
 typecheck' e@(If cond arm1 arm2) = do
-    cond'@(tcond, _) <- typecheck' cond
+    (cond', tcond) <- check cond
 
     unless (tcond == Bool) $ do
         throw $ TypeError { expected = Bool, got = tcond, errorExpr = cond, containingExpr = e }
 
-    arm1E@(tArm1, _) <- typecheck' arm1
-    arm2E@(tArm2, _) <- typecheck' arm2
+    (arm1E, tArm1) <- check arm1
+    (arm2E, tArm2) <- check arm2
 
     unless (tArm1 == tArm2) $ do
         throw $ MismatchedArms { .. }
 
     pure (tArm1, SIf cond' arm1E arm2E)
---
+
 typecheck' e@(Do exprs) = do
     assert (not . null $ exprs) $ pure ()
     foldM (const typecheck') undefined exprs
