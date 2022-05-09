@@ -28,6 +28,7 @@ import           Parser                         ( BinOp(..)
                                                 , Expr(..)
                                                 , Parameter(Parameter)
                                                 )
+import           Prelude                 hiding ( id )
 import           Text.Printf                    ( printf )
 
 data Type = I32 | Unit | Bool | String | F32 | Func [Type] Type
@@ -144,39 +145,40 @@ typecheck decls = do
         pure decl'
 
 internalLookupFunc :: Text -> [Parameter] -> Semant ([SParameter], Type)
-internalLookupFunc id' params = do
+internalLookupFunc id params = do
     let internalErr s = throw . Internal . T.pack . printf s . T.unpack
 
-    f' <- S.gets $ M.lookup id'
+    f' <- S.gets $ M.lookup id
     f  <- case f' of
-        Nothing -> internalErr "Couldn't find function %s" id'
+        Nothing -> internalErr "Couldn't find function %s" id
         Just f  -> pure f
 
     case f of
         Func paramsT ret -> do
             let params' = zipWith (\(Parameter n _) t -> SParameter n t) params paramsT
             pure (params', ret)
-        _ -> internalErr "Lookup for %s didn't return function!" id'
+        _ -> internalErr "Lookup for %s didn't return function!" id
 
 
 typecheckDecl :: Decl -> Semant SDecl
-typecheckDecl (Function id' params ret e) = do
-    (params', ret') <- internalLookupFunc id' params
+typecheckDecl (Function id params ret e) = do
+    (params', ret') <- internalLookupFunc id params
     (e'     , te  ) <- check e
 
     unless (te == ret') $ do
         throw $ TypeError { got = te, expected = ret', containingExpr = e, errorExpr = e }
 
-    pure $ SFunction id' params' ret' e'
-typecheckDecl (Extern id' params ret) = do
-    (params', ret') <- internalLookupFunc id' params
+    pure $ SFunction id params' ret' e'
 
-    pure $ SExtern id' params' ret'
+typecheckDecl (Extern id params ret) = do
+    (params', ret') <- internalLookupFunc id params
 
-typecheckDecl (Let id' t expr) = do
+    pure $ SExtern id params' ret'
+
+typecheckDecl (Let id t expr) = do
     (expr', texpr) <- check expr
 
-    pure $ SLet id' texpr expr'
+    pure $ SLet id texpr expr'
 
 check :: Expr -> Semant (SExpr, Type)
 check a = do
