@@ -1,12 +1,27 @@
 module Main where
 
-import           Control.Monad                  ( when )
+import           Control.Applicative            ( (<**>) )
 import           Control.Monad.Except           ( guard )
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
 import           Data.Text.IO                   ( hPutStrLn )
 import           Interpreter                    ( run1 )
-import           Parser                         ( pDecls )
+import           Options.Applicative            ( Parser
+                                                , ParserInfo
+                                                , command
+                                                , customExecParser
+                                                , info
+                                                , prefs
+                                                , progDesc
+                                                , showHelpOnError
+                                                , strOption, help
+                                                )
+import Options.Applicative.Builder ( fullDesc, subparser, metavar )
+import           Options.Applicative.Extra      ( helper )
+import           Parser                         ( Decl
+                                                , pDecls
+                                                )
+import           Pretty                         ( render )
 import           System.Environment
 import           System.IO                      ( stderr )
 import           Text.Megaparsec                ( parse )
@@ -15,25 +30,70 @@ import           Text.Pretty.Simple             ( pPrint )
 import           Typecheck                      ( runSemant
                                                 , typecheck
                                                 )
+import Options.Applicative.Builder (argument)
+import Options.Applicative.Builder (str)
+import Control.Monad (void)
+
+data Options = Options
+    { path       :: FilePath
+    , subcommand :: Command
+    }
+
+data Command = Run | Pretty | Typecheck
+
+parseCommand :: Parser Command
+parseCommand = subparser $
+    command "cc"
+        (info (pure Run <**> helper)
+        (fullDesc <> progDesc "Run a program."))
+    <>
+    command "pretty"
+        (info (pure Pretty <**> helper)
+        (fullDesc <> progDesc "Pretty-print a program."))
+    <>
+    command "typecheck"
+        (info (pure Typecheck <**> helper)
+        (fullDesc <> progDesc "Typecheck a program without running it."))
+
+showHelpOnErrorExecParser :: ParserInfo a -> IO a
+showHelpOnErrorExecParser = customExecParser (prefs showHelpOnError)
+
+parsePath :: Parser FilePath
+parsePath = argument str (metavar "PATH" <> help "Input file.")
+
+parseOptions :: Parser Options
+parseOptions = flip Options <$> parseCommand <*> parsePath
+
+typecheck' :: [Decl] -> IO Bool
+typecheck' decls = do
+    case fst $ flip runSemant M.empty $ typecheck decls of
+        Left  err    -> do 
+            putStrLn . T.unpack . render $ err 
+            pure False
+        Right sdecls -> pure True
+
+run :: [Decl] -> IO ()
+run decls = do
+    typecheck' decls >>= guard
+
+    ran <- run1 decls
+    either pPrint pPrint ran
+
+pretty :: [Decl] -> IO ()
+pretty = putStrLn . T.unpack . render
 
 main :: IO ()
 main = do
-    args <- getArgs
+    args    <- getArgs
+    options <- showHelpOnErrorExecParser $ info (helper <*> parseOptions) mempty
 
-    when (length args > 1) $ do
-        hPutStrLn stderr "Usage: [exe] file"
-        guard False
+    let sub = subcommand options
 
-    let (x : _) = args
+    contents <- T.pack <$> readFile (path options)
 
-    contents <- readFile x
-
-    case parse pDecls x $ T.pack contents of
+    case parse pDecls (path options) contents of
         Left  parseE -> hPutStrLn stderr . T.pack $ errorBundlePretty parseE
-        Right decls  -> case fst $ flip runSemant M.empty $ typecheck decls of
-            Left  err    -> pPrint err
-            Right sdecls -> do
-                pPrint decls
-                pPrint sdecls
-                ran <- run1 decls
-                either pPrint pPrint ran
+        Right decls  -> ($ decls) $ case sub of
+            Run       -> run
+            Pretty    -> pretty
+            Typecheck -> void <$> typecheck'
