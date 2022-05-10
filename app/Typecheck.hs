@@ -1,9 +1,11 @@
+{-# LANGUAGE NamedFieldPuns #-}
+
 module Typecheck
     ( typecheck
     , runSemant
+    , SemantError(..)
+    , Type(..)
     ) where
-
-{-# LANGUAGE RecordWildCards #-}
 
 import           Control.Exception              ( assert )
 import           Control.Monad                  ( foldM
@@ -34,13 +36,12 @@ import           Text.Printf                    ( printf )
 data Type = I32 | Unit | Bool | String | F32 | Func [Type] Type
     deriving (Eq, Show)
 
-data SemantError = Invalid Text
-                 | IdentifierNotInScope { var :: Text, varExpr :: Expr }
-                 | TypeNotInScope { tBind :: Maybe Text, tVar :: Text }
+data SemantError = IdentifierNotInScope { var :: Text, varExpr :: Expr }
+                 | TypeNotInScope { tBind :: Maybe Text, tVar :: Text, tExpr :: Maybe Expr }
                  | Internal Text
                  | NoMain
-                 | TypeError { expected :: Type, got :: Type, containingExpr :: Expr, errorExpr :: Expr }
-                 | MismatchedArms { tArm1 :: Type, tArm2 :: Type, arm1E :: SExpr, arm2E :: SExpr }
+                 | TypeError { expected :: Type, got :: Type, containingExpr :: Maybe Expr, errorExpr :: Expr }
+                 | MismatchedArms { tArm1 :: Type, tArm2 :: Type, arm1E :: Expr, arm2E :: Expr }
                  | NotAFunction { fnExpr :: Expr, callExpr :: Expr }
                  deriving Show
 
@@ -108,26 +109,26 @@ builtinTypes =
 runSemant :: Semant a -> Env -> (Either SemantError a, Env)
 runSemant (Semant s) e = Id.runIdentity . flip S.runStateT e $ E.runExceptT s
 
-lookupTy :: Maybe Text -> Text -> Semant Type
-lookupTy n t = do
+lookupTy :: Maybe Text -> Text -> Maybe Expr -> Semant Type
+lookupTy n t expr = do
     case M.lookup t builtinTypes of
         Just a  -> pure a
-        Nothing -> throw $ TypeNotInScope { tBind = n, tVar = t }
+        Nothing -> throw $ TypeNotInScope { tBind = n, tVar = t, tExpr = expr }
 
 parseParams :: Traversable t => t Parameter -> Semant (t Type)
-parseParams = mapM (\(Parameter n t) -> lookupTy (Just n) t)
+parseParams = mapM (\(Parameter n t) -> lookupTy (Just n) t Nothing)
 
 typecheck :: [Decl] -> Semant [SDecl]
 typecheck decls = do
-    let addF s p r = do
+    let addF s p r expr = do
             params <- parseParams p
-            ret    <- lookupTy Nothing r
+            ret    <- lookupTy Nothing r expr
             S.modify (M.insert s $ Func params ret)
 
     forM_ decls $ \case
-        Function sym params ret _ -> addF sym params ret
-        Extern sym params ret     -> addF sym params ret
-        Let    sym ty     _       -> lookupTy (Just sym) ty >>= S.modify . M.insert sym
+        Function sym params ret e -> addF sym params ret (Just e)
+        Extern sym params ret     -> addF sym params ret Nothing
+        Let    sym ty     e       -> lookupTy (Just sym) ty (Just e) >>= S.modify . M.insert sym
 
     forM decls $ \decl -> do
         orig <- S.get
@@ -166,7 +167,7 @@ typecheckDecl (Function id params ret e) = do
     (e'     , te  ) <- check e
 
     unless (te == ret') $ do
-        throw $ TypeError { got = te, expected = ret', containingExpr = e, errorExpr = e }
+        throw $ TypeError { got = te, expected = ret', containingExpr = Nothing, errorExpr = e }
 
     pure $ SFunction id params' ret' e'
 
@@ -187,7 +188,7 @@ check a = do
 
 typecheck' :: Expr -> Semant SExpr
 -- Val should only be used by the interpreter.
-typecheck' (Val           _) = throw $ Invalid "Shouldn't have a value!"
+typecheck' (Val           _) = throw $ Internal "Shouldn't have a value!"
 typecheck' (StringLiteral s) = pure (String, SStringLiteral s)
 typecheck' (IntLit        i) = pure (I32, SIntLit i)
 typecheck' (FloatLit      f) = pure (F32, SFloatLit f)
@@ -198,7 +199,7 @@ typecheck' e@(Neg i)         = do
     (i', ti) <- check i
 
     unless (ti == I32) $ do
-        throw TypeError { expected = I32, got = ti, errorExpr = i, containingExpr = e }
+        throw TypeError { expected = I32, got = ti, errorExpr = i, containingExpr = Just e }
 
     pure (ti, SNeg i')
 
@@ -207,10 +208,10 @@ typecheck' e@(Operator op lhs rhs) = do
     (rhs', trhs) <- check rhs
 
     unless (tlhs == trhs) $ do
-        throw TypeError { expected = tlhs, got = trhs, errorExpr = rhs, containingExpr = e }
+        throw TypeError { expected = tlhs, got = trhs, errorExpr = rhs, containingExpr = Just e }
 
     let assertOfType t = unless (tlhs == t) $ do
-            throw TypeError { expected = t, got = tlhs, errorExpr = e, containingExpr = e }
+            throw TypeError { expected = t, got = tlhs, errorExpr = e, containingExpr = Just e }
 
     when (op `elem` intOps || op `elem` ordOps) $ do
         assertOfType I32
@@ -245,7 +246,7 @@ typecheck' e@(Call fn params) = do
         (p', tp) <- check p
 
         unless (tp == fp_t) $ do
-            throw TypeError { expected = fp_t, got = tp, errorExpr = p, containingExpr = e }
+            throw TypeError { expected = fp_t, got = tp, errorExpr = p, containingExpr = Just e }
 
         pure p'
 
@@ -255,15 +256,15 @@ typecheck' e@(If cond arm1 arm2) = do
     (cond', tcond) <- check cond
 
     unless (tcond == Bool) $ do
-        throw $ TypeError { expected = Bool, got = tcond, errorExpr = cond, containingExpr = e }
+        throw $ TypeError { expected = Bool, got = tcond, errorExpr = cond, containingExpr = Just e }
 
-    (arm1E, tArm1) <- check arm1
-    (arm2E, tArm2) <- check arm2
+    (arm1', tArm1) <- check arm1
+    (arm2', tArm2) <- check arm2
 
     unless (tArm1 == tArm2) $ do
-        throw $ MismatchedArms { .. }
+        throw $ MismatchedArms { tArm1, tArm2, arm1E = arm1, arm2E = arm2 }
 
-    pure (tArm1, SIf cond' arm1E arm2E)
+    pure (tArm1, SIf cond' arm1' arm2')
 
 typecheck' e@(Do exprs) = do
     assert (not . null $ exprs) $ pure ()

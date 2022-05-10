@@ -3,6 +3,7 @@ packages:
 - .
 extra-deps: # [
 - llvm-hs-pretty-0.9.0.0@sha256:b7a5de5f3dd97893d19d2b47af1e4dd8d075a5cf57062180a912d1f3ef1def60,1671
+- diagnose-1.8.2@sha256:d70959f2147f5a1d01c1cc14a7ad8f117d0a3cd544d626bb06a93e40b2ad5cbe,5661
   # ]
 # flags: {}
 # extra-package-dbs: []
