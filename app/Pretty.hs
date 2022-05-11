@@ -32,6 +32,7 @@ import qualified Prettyprinter.Render.Text     as P.Text
 import           Typecheck                      ( SemantError(..)
                                                 , Type(..)
                                                 )
+import Data.String (IsString)
 
 layoutOptions :: Int -> LayoutOptions
 layoutOptions columns = LayoutOptions { layoutPageWidth = AvailablePerLine columns 1 }
@@ -92,7 +93,7 @@ idType = annotateColor P.Term.Magenta
 
 pargs :: Pretty a => [a] -> Doc AnsiStyle
 pargs l | null l    = mempty
-        | otherwise = (" " <>) . P.hsep . P.punctuate " " . map pretty $ l
+        | otherwise = (<> " ") . (" " <>) . P.hsep . P.punctuate " " . map pretty $ l
 
 blk :: Doc a -> Doc a
 blk b = P.cat ["(", P.indent 4 b, ")"]
@@ -102,6 +103,9 @@ pty = idType . pretty
 
 pid :: Pretty a => a -> Doc AnsiStyle
 pid = id . pretty
+
+parens :: (Semigroup a, IsString a) => a -> a
+parens x = "(" <> x <> ")"
 
 instance Pretty DoStatement where
     pretty = \case
@@ -194,7 +198,7 @@ instance Pretty [Decl] where
     pretty = P.vsep . map pretty
 
 instance Pretty Parameter where
-    pretty (Parameter name ty) = "(" <> id (pretty name) <> ":" <+> idType (pretty ty) <> ")"
+    pretty (Parameter name ty) = parens $ id (pretty name) <> ":" <+> idType (pretty ty)
 
 instance Pretty Decl where
     pretty = \case
@@ -212,13 +216,13 @@ instance Pretty Expr where
         FloatLit      f     -> lp f
         BoolLit       b     -> lp b
         UnitLit             -> lit "()"
-        Neg e               -> op "-" <> "(" <> pretty e <> ")"
-        Operator o lhs rhs  -> "(" <> pretty lhs <+> op (pretty o) <+> pretty rhs <> ")"
+        Neg e               -> op "-" <> parens (pretty e)
+        Operator o lhs rhs  -> parens $ pretty lhs <+> op (pretty o) <+> pretty rhs
         Identifier i        -> ip i
-        Call f ps           -> kw "call" <+> ip f <+> P.hcat (P.punctuate " " (map pretty ps))
+        Call f ps           -> ip f <+> P.hcat (P.punctuate " " (map (parens . pretty) ps))
 
         If cond arm1 arm2   -> P.vcat
-            ["(" <> kw "if", P.indent 4 $ P.vcat [pretty cond, pretty arm1, pretty arm2], ")"]
+            ["(" <> kw "if", P.indent 4 $ P.vcat [parens $ pretty cond, parens $ pretty arm1, parens $ pretty arm2], ")"]
 
         Do exps ->
             P.cat [kw "do" <+> "{", P.indent 4 . P.vcat . map ((<> ";") . pretty) $ exps, "}"]

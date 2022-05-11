@@ -1,37 +1,44 @@
-extern print (x: i32) unit
+extern print (x: i32) unit;
+
+let global: i32 = 1 * 1 + 2;
 
 // yeah
 fn main -> unit = do {
-    let f: fn i32 -> unit = (\(x: i32) unit -> call print call fac x);
-    call loop f 20 0;
-    // call loop (\(y: i32) unit -> call print y) 5 0;
-    call loop \(y: i32) unit -> do { call print y; } 5 0;
-    // call print call call test;
-}
+    let f: fn i32 -> unit = (\(x: i32) unit -> print (fac 3));
+    loop f 20 0;
+    loop (\(y: i32) unit -> print y) 5 0;
+    loop \(y: i32) unit -> do { print y; } 5 0;
+    // print _test' ();
+    _test' (); // discarded atm, TODO: typecheck?
+    ();
+};
 
-fn test -> fn -> i32 = do {
+fn _test' (_: unit) -> fn -> i32 = do {
         let z: i32 = 12;
-        (\i32 -> -z);
-    }
+        \i32 -> -z;
+};
 
 fn loop(f: fn i32 -> unit) (upper: i32) (lower: i32) -> unit = 
-    if upper < lower
+    if (upper < lower)
         () 
         do { 
-            call f upper;
-            call loop f (upper - 1) lower; 
+            f upper;
+            loop f (upper - 1) lower; 
         }
+;
 
-fn run_fac_and_print(x: i32) -> unit = (call print call fac x)
+fn run_fac_and_print(x: i32) -> unit = print (fac x);
 
 fn fib (x: i32) -> i32 = 
-    if x <= 1
+    if (x <= 1)
         do { 1; }
-        (call fib (x - 1) + call fib (x - 2))
+        fib (x - 1) + fib (x - 2)
+;
 
 
 fn fac (x: i32) -> i32 = 
-    if (x <= 1) and do { call print 11; true; }
+    if ((x <= 1) and do { print 11; true; })
         1 
-        (x * call fac (x - 1))
+        (x * fac (x - 1))
+;
 
