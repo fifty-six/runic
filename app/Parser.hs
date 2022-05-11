@@ -21,13 +21,13 @@ import           Data.Char                      ( isAlpha
                                                 , isAlphaNum
                                                 )
 import           Data.Functor                   ( ($>) )
-import           Data.String.Conversions        ( cs )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import           Data.Void
 import           Text.Megaparsec
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer    as L
+import Control.Monad.Combinators.Expr
 
 type Parser = Parsec Void Text
 
@@ -149,21 +149,28 @@ funP = do
 
     Function <$> identifier <*> many param <*> (symbol "->" *> ty) <*> (symbol "=" *> expr)
 
-expr :: Parser Expr
-expr = choice
+ops :: [[Operator Parser Expr]]
+ops = [ [ Prefix $ Neg <$ symbol "-" ]
+      , [ infixL Mul "*" , infixL Div "/" ]
+      , [ infixL Add "+" , infixL Sub "-" ]
+      , [ infixL LeEqTo "<="
+        , infixL GrEqTo ">="
+        , infixL GreaterThan ">"
+        , infixL LessThan "<"
+        ]
+      , [ infixL EqualTo "==" ]
+      , [ infixL And "and" ]
+      , [ infixL Or "or" ]
+      ]
+
+infixL :: BinOp -> Text -> Operator Parser Expr
+infixL op sym = InfixL $ Operator op <$ symbol sym
+
+expr' :: Parser Expr
+expr' = choice
     [ try $ parens expr
     , try func
-    , try (binop "+" Add)
-    , try (binop "-" Sub)
-    , try (binop "*" Mul)
-    , try (binop "<" LessThan)
-    , try (binop ">" GreaterThan)
-    , try (binop ">=" GrEqTo)
-    , try (binop "<=" LeEqTo)
-    , try (binop "==" EqualTo)
-    , try (binop "/" Div)
-    , try (binop "and" And)
-    , try (binop "or" Or)
+    , try unit
     , stringLiteral
     , Identifier <$> try identifier
     , try call
@@ -171,10 +178,12 @@ expr = choice
     , try neg
     , try doP
     , try ifP
-    , try unit
     , int
     , bool
     ]
+
+expr :: Parser Expr
+expr = makeExprParser expr' ops
 
 neg :: Parser Expr
 neg = Neg <$> (symbol "-" *> expr)
@@ -196,9 +205,6 @@ int = lexeme $ IntLit <$> L.decimal
 
 float :: Parser Expr
 float = lexeme $ FloatLit <$> L.float
-
-binop :: Text -> BinOp -> Parser Expr
-binop sym op = parens $ symbol sym *> (Operator op <$> expr <*> expr)
 
 doP :: Parser Expr
 doP = do
@@ -232,7 +238,7 @@ stringLiteral = do
     str <- lexeme . surround (char '"') $ takeWhileP Nothing (/= '"')
 
     -- stolen trick: use Haskell's string parsing to deal with escapes
-    pure . StringLiteral $ read ('"' : cs str ++ "\"")
+    pure . StringLiteral $ read ('"' : T.unpack str ++ "\"")
 
 func :: Parser Expr
 func = symbol "\\" *> (

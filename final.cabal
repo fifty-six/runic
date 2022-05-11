@@ -39,9 +39,8 @@ executable final
                       , text
                       , prettyprinter
                       , prettyprinter-ansi-terminal
-                      , diagnose
-                      , string-conversions
                       , optparse-applicative
+                      , parser-combinators
     ghc-options:        -Wall
                         -Wno-unused-matches
                         -Wincomplete-patterns
