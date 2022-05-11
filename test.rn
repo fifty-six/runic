@@ -1,9 +1,28 @@
 extern print (x: i32) unit
 
+// yeah
 fn main -> unit = do {
-    call print (call fac 5);
-    call print (call fib 5);
+    let f: fn i32 -> unit = (\(x: i32) unit -> call print call fac x);
+    // call loop f 20 0;
+    // call loop (\(y: i32) unit -> call print y) 5 0;
+    call loop \(y: i32) unit -> do { call print y; } 5 0;
+    // call print call call test;
 }
+
+fn test -> fn -> i32 = do {
+        let z: i32 = 12;
+        (\i32 -> z);
+    }
+
+fn loop(f: fn i32 -> unit) (upper: i32) (lower: i32) -> unit = 
+    if (< upper lower) 
+        () 
+        do { 
+            call f upper;
+            call loop f (- upper 1) lower; 
+        }
+
+fn run_fac_and_print(x: i32) -> unit = (call print call fac x)
 
 fn fib (x: i32) -> i32 = 
     if (<= x 1) 

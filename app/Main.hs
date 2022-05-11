@@ -1,6 +1,7 @@
 module Main where
 
 import           Control.Applicative            ( (<**>) )
+import           Control.Monad                  ( void )
 import           Control.Monad.Except           ( guard )
 import qualified Data.Map                      as M
 import qualified Data.Text                     as T
@@ -10,13 +11,18 @@ import           Options.Applicative            ( Parser
                                                 , ParserInfo
                                                 , command
                                                 , customExecParser
+                                                , help
                                                 , info
                                                 , prefs
                                                 , progDesc
                                                 , showHelpOnError
-                                                , strOption, help
                                                 )
-import Options.Applicative.Builder ( fullDesc, subparser, metavar )
+import           Options.Applicative.Builder    ( argument
+                                                , fullDesc
+                                                , metavar
+                                                , str
+                                                , subparser
+                                                )
 import           Options.Applicative.Extra      ( helper )
 import           Parser                         ( Decl
                                                 , pDecls
@@ -30,9 +36,6 @@ import           Text.Pretty.Simple             ( pPrint )
 import           Typecheck                      ( runSemant
                                                 , typecheck
                                                 )
-import Options.Applicative.Builder (argument)
-import Options.Applicative.Builder (str)
-import Control.Monad (void)
 
 data Options = Options
     { path       :: FilePath
@@ -42,18 +45,17 @@ data Options = Options
 data Command = Run | Pretty | Typecheck
 
 parseCommand :: Parser Command
-parseCommand = subparser $
-    command "cc"
-        (info (pure Run <**> helper)
-        (fullDesc <> progDesc "Run a program."))
-    <>
-    command "pretty"
-        (info (pure Pretty <**> helper)
-        (fullDesc <> progDesc "Pretty-print a program."))
-    <>
-    command "typecheck"
-        (info (pure Typecheck <**> helper)
-        (fullDesc <> progDesc "Typecheck a program without running it."))
+parseCommand =
+    subparser
+        $  command "run" (info (pure Run <**> helper) (fullDesc <> progDesc "Run a program."))
+        <> command
+               "pretty"
+               (info (pure Pretty <**> helper) (fullDesc <> progDesc "Pretty-print a program."))
+        <> command
+               "typecheck"
+               (info (pure Typecheck <**> helper)
+                     (fullDesc <> progDesc "Typecheck a program without running it.")
+               )
 
 showHelpOnErrorExecParser :: ParserInfo a -> IO a
 showHelpOnErrorExecParser = customExecParser (prefs showHelpOnError)
@@ -67,8 +69,8 @@ parseOptions = flip Options <$> parseCommand <*> parsePath
 typecheck' :: [Decl] -> IO Bool
 typecheck' decls = do
     case fst $ flip runSemant M.empty $ typecheck decls of
-        Left  err    -> do 
-            putStrLn . T.unpack . render $ err 
+        Left err -> do
+            putStrLn . T.unpack . render $ err
             pure False
         Right sdecls -> pure True
 

@@ -6,9 +6,7 @@ import           Control.Exception              ( assert )
 import           Control.Monad                  ( foldM
                                                 , when
                                                 )
-import           Control.Monad.Except           ( ExceptT
-                                                , throwError
-                                                )
+import           Control.Monad.Except           ( ExceptT )
 import qualified Control.Monad.Except          as E
 import qualified Control.Monad.IO.Class        as IO
 import           Control.Monad.State.Strict     ( StateT )
@@ -19,6 +17,7 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import           Parser                         ( BinOp(..)
                                                 , Decl(..)
+                                                , DoStatement(..)
                                                 , Expr(..)
                                                 , Identifier
                                                 , Parameter(Parameter)
@@ -27,6 +26,7 @@ import           Parser                         ( BinOp(..)
 import           Prelude                 hiding ( id )
 import           Text.Pretty.Simple             ( pPrint )
 import           Text.Printf                    ( printf )
+import           Util
 
 data Var = E Expr | F [Identifier] Expr
     deriving (Show)
@@ -44,12 +44,6 @@ type Env = Map.Map Identifier Var
 newtype Interpreter a = Interpreter (ExceptT InterpreterError (StateT Env IO) a)
     deriving (Monad, Functor, Applicative, E.MonadError InterpreterError, S.MonadState Env, IO.MonadIO)
 
-throw :: E.MonadError e m => e -> m a
-throw = throwError
-
-(...) :: (b -> c) -> (a1 -> a2 -> b) -> a1 -> a2 -> c
-(...) = (.) . (.)
-
 runInterpreterT :: Interpreter a -> Env -> IO (Either InterpreterError a, Env)
 runInterpreterT (Interpreter i) = S.runStateT $ E.runExceptT i
 
@@ -66,8 +60,8 @@ run1 decls = do
 
 setup :: [Decl] -> Env -> Env
 setup [] e = e
-setup ((Let id _ expr) : xs) e = setup xs $ Map.insert id (E expr) e
-setup ((Extern id _ _) : xs) e = setup xs $ Map.insert id (E . Val $ IExtern id) e
+setup ((Let id _ expr) : xs) e             = setup xs $ Map.insert id (E expr) e
+setup ((Extern id _ _) : xs) e             = setup xs $ Map.insert id (E . Val $ IExtern id) e
 setup ((Function id params _ expr) : xs) e = setup xs e'
   where
     e'  = Map.insert id (F ids expr) e
@@ -99,9 +93,12 @@ notBoolErr :: Text -> Text -> Text -> Interpreter a
 notBoolErr a b c = throw $ TypeError (printf "Expected boolean to %s of %s, got %s" a b c)
 
 run :: Expr -> Interpreter Value
--- run Lambda {} = undefined
 run (Val v)         = pure v
 run UnitLit         = pure IUnit
+run (IntLit   i   ) = pure $ IInt i
+run (FloatLit f   ) = pure $ IFloat f
+run (BoolLit  b   ) = pure $ IBool b
+
 run (If cond e1 e2) = do
     cond' <- run cond
 
@@ -110,19 +107,28 @@ run (If cond e1 e2) = do
         _          -> throw $ TypeError "If has non-bool in conditional!"
 
     if b then run e1 else run e2
-run (IntLit   i) = pure $ IInt i
-run (FloatLit f) = pure $ IFloat f
-run (BoolLit  b) = pure $ IBool b
-run (Neg      e) = do
+
+run (Lambda params ret expr) = pure $ IFunc (map (\(Parameter n _) -> n) params) expr
+
+run (Neg e                 ) = do
     e' <- run e
 
     case e' of
         IInt   i -> pure $ IInt (-i)
         IFloat i -> pure $ IFloat (-i)
         _        -> throw $ TypeError "tried to negate non-float/int"
+
 run (Do exprs) = do
     assert (not . null $ exprs) $ pure ()
-    foldM (\acc a -> run a) undefined exprs
+
+    let run' = \case
+            DoLet id ty e -> do
+                S.modify (Map.insert id (E e))
+                pure IUnit
+            DoExpr e -> run e
+
+    locally (const $ foldM (const run') undefined exprs)
+
 run (Call f paramV) = do
     f' <- run f
 
@@ -149,7 +155,7 @@ run (Call f paramV) = do
 
             run (head paramV) >>= ef
         _ -> throw $ TypeError "Tried to call a non-function!"
---
+
 run (Identifier i) = do
     m <- S.get
 
@@ -160,7 +166,7 @@ run (Identifier i) = do
     case v of
         E expr        -> run expr
         F params expr -> pure $ IFunc params expr
---
+
 run (StringLiteral t             ) = pure $ IString t
 run (Operator LessThan    lhs rhs) = runIntOp (<) "<" IBool lhs rhs
 run (Operator GreaterThan lhs rhs) = runIntOp (>) ">" IBool lhs rhs

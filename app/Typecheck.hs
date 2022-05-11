@@ -15,7 +15,7 @@ import           Control.Monad                  ( foldM
                                                 , when
                                                 )
 import           Control.Monad.Except           ( ExceptT
-                                                , MonadError(throwError)
+                                                , MonadError()
                                                 )
 import qualified Control.Monad.Except          as E
 import           Control.Monad.State.Class      ( MonadState )
@@ -27,11 +27,19 @@ import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
 import           Parser                         ( BinOp(..)
                                                 , Decl(..)
+                                                , DoStatement(..)
                                                 , Expr(..)
+                                                , Identifier
                                                 , Parameter(Parameter)
                                                 )
-import           Prelude                 hiding ( id )
+import qualified Parser                        as P
+import           Prelude                 hiding ( id
+                                                , lookup
+                                                )
 import           Text.Printf                    ( printf )
+import           Util
+
+type PType = P.Type
 
 data Type = I32 | Unit | Bool | String | F32 | Func [Type] Type
     deriving (Eq, Show)
@@ -39,6 +47,7 @@ data Type = I32 | Unit | Bool | String | F32 | Func [Type] Type
 data SemantError = IdentifierNotInScope { var :: Text, varExpr :: Expr }
                  | TypeNotInScope { tBind :: Maybe Text, tVar :: Text, tExpr :: Maybe Expr }
                  | Internal Text
+                 | NotEnoughArguments { callExpr :: Expr, expectedCt :: Int, gotCt :: Int }
                  | NoMain
                  | TypeError { expected :: Type, got :: Type, containingExpr :: Maybe Expr, errorExpr :: Expr }
                  | MismatchedArms { tArm1 :: Type, tArm2 :: Type, arm1E :: Expr, arm2E :: Expr }
@@ -62,10 +71,10 @@ data SExpr'
     | SCall SExpr [SExpr]
     | SNeg SExpr
     | SIf SExpr SExpr SExpr
+    | SLambda [SParameter] Type SExpr
     | SDo [SExpr]
     deriving (Show, Eq)
 
-type Identifier = Text
 data SParameter = SParameter Identifier Type
     deriving (Show, Eq)
 
@@ -74,9 +83,6 @@ data SDecl
     | SFunction Identifier [SParameter] Type SExpr
     | SExtern Identifier [SParameter] Type
     deriving (Show, Eq)
-
-throw :: MonadError e m => e -> m a
-throw = throwError
 
 intOps :: [BinOp]
 intOps = [Add, Sub, Mul, Div]
@@ -102,18 +108,31 @@ opRes = M.fromList
     , (Div        , I32)
     ]
 
-builtinTypes :: M.Map Text Type
-builtinTypes =
-    M.fromList [("i32", I32), ("f32", F32), ("str", String), ("unit", Unit), ("bool", Bool)]
+builtinTypes :: M.Map PType Type
+builtinTypes = M.fromList
+    [ (P.Raw "i32" , I32)
+    , (P.Raw "f32" , F32)
+    , (P.Raw "str" , String)
+    , (P.Raw "unit", Unit)
+    , (P.Raw "bool", Bool)
+    ]
 
 runSemant :: Semant a -> Env -> (Either SemantError a, Env)
 runSemant (Semant s) e = Id.runIdentity . flip S.runStateT e $ E.runExceptT s
 
-lookupTy :: Maybe Text -> Text -> Maybe Expr -> Semant Type
+lookupTy :: Maybe Text -> PType -> Maybe Expr -> Semant Type
 lookupTy n t expr = do
-    case M.lookup t builtinTypes of
-        Just a  -> pure a
-        Nothing -> throw $ TypeNotInScope { tBind = n, tVar = t, tExpr = expr }
+    case t of
+        P.Raw name -> case M.lookup t builtinTypes of
+            Just a  -> pure a
+            Nothing -> throw $ TypeNotInScope { tBind = n, tVar = name, tExpr = expr }
+        P.FnTy params ret -> do
+            let lookup l = lookupTy Nothing l Nothing
+            params' <- mapM lookup params
+            Func params' <$> lookup ret
+
+addSym :: Text -> PType -> Expr -> Semant ()
+addSym sym ty e = lookupTy (Just sym) ty (Just e) >>= S.modify . M.insert sym
 
 parseParams :: Traversable t => t Parameter -> Semant (t Type)
 parseParams = mapM (\(Parameter n t) -> lookupTy (Just n) t Nothing)
@@ -128,10 +147,9 @@ typecheck decls = do
     forM_ decls $ \case
         Function sym params ret e -> addF sym params ret (Just e)
         Extern sym params ret     -> addF sym params ret Nothing
-        Let    sym ty     e       -> lookupTy (Just sym) ty (Just e) >>= S.modify . M.insert sym
+        Let    sym ty     e       -> addSym sym ty e
 
-    forM decls $ \decl -> do
-        orig <- S.get
+    forM decls $ \decl -> locally $ \_ -> do
         case decl of
             Function _ params _ _ -> do
                 params' <- parseParams params
@@ -140,10 +158,7 @@ typecheck decls = do
 
             _ -> pure ()
 
-        decl' <- typecheckDecl decl
-        S.put orig
-
-        pure decl'
+        typecheckDecl decl
 
 internalLookupFunc :: Text -> [Parameter] -> Semant ([SParameter], Type)
 internalLookupFunc id params = do
@@ -195,6 +210,23 @@ typecheck' (FloatLit      f) = pure (F32, SFloatLit f)
 typecheck' (BoolLit       b) = pure (Bool, SBoolLit b)
 typecheck' UnitLit           = pure (Unit, SUnitLit)
 
+typecheck' l@(Lambda p r e) = do
+    p' <- parseParams p
+    r' <- lookupTy Nothing r (Just l)
+
+    let ps = zipWith (\(Parameter n _) t -> SParameter n t) p p'
+
+    (e', sr') <- locally $ \m -> do
+        -- Need the parameters in scope while we're checking the body
+        forM_ (zip p p') $ \(Parameter n _, t) -> S.modify $ M.insert n t
+
+        check e
+
+    unless (r' == sr') $ do
+        throw $ TypeError { expected = r', got = sr', errorExpr = e, containingExpr = Just l }
+
+    pure (Func p' r', SLambda ps r' e')
+
 typecheck' e@(Neg i)         = do
     (i', ti) <- check i
 
@@ -210,8 +242,20 @@ typecheck' e@(Operator op lhs rhs) = do
     unless (tlhs == trhs) $ do
         throw TypeError { expected = tlhs, got = trhs, errorExpr = rhs, containingExpr = Just e }
 
-    let assertOfType t = unless (tlhs == t) $ do
-            throw TypeError { expected = t, got = tlhs, errorExpr = e, containingExpr = Just e }
+    let assertOfType t = do
+            unless (tlhs == t) $ do
+                throw TypeError { expected       = t
+                                , got            = tlhs
+                                , errorExpr      = lhs
+                                , containingExpr = Just e
+                                }
+
+            unless (trhs == t) $ do
+                throw TypeError { expected       = t
+                                , got            = trhs
+                                , errorExpr      = rhs
+                                , containingExpr = Just e
+                                }
 
     when (op `elem` intOps || op `elem` ordOps) $ do
         assertOfType I32
@@ -240,6 +284,9 @@ typecheck' e@(Call fn params) = do
         Func a b -> pure (a, b)
         _        -> throw NotAFunction { fnExpr = fn, callExpr = e }
 
+    unless (length params == length fps) $ do
+        throw NotEnoughArguments { callExpr = e, expectedCt = length fps, gotCt = length params }
+
     -- Now we need to check our params are well-formed.
     m       <- S.get
     params' <- forM (zip params fps) $ \(p, fp_t) -> do
@@ -256,7 +303,11 @@ typecheck' e@(If cond arm1 arm2) = do
     (cond', tcond) <- check cond
 
     unless (tcond == Bool) $ do
-        throw $ TypeError { expected = Bool, got = tcond, errorExpr = cond, containingExpr = Just e }
+        throw $ TypeError { expected       = Bool
+                          , got            = tcond
+                          , errorExpr      = cond
+                          , containingExpr = Just e
+                          }
 
     (arm1', tArm1) <- check arm1
     (arm2', tArm2) <- check arm2
@@ -268,4 +319,22 @@ typecheck' e@(If cond arm1 arm2) = do
 
 typecheck' e@(Do exprs) = do
     assert (not . null $ exprs) $ pure ()
-    foldM (const typecheck') undefined exprs
+
+    let f _ = \case
+            DoExpr d       -> typecheck' d
+            DoLet id ty ex -> do
+                t        <- lookupTy (Just id) ty (Just ex)
+                (_, ty') <- check ex
+
+                unless (t == ty') $ do
+                    throw $ TypeError { got            = ty'
+                                      , expected       = t
+                                      , errorExpr      = ex
+                                      , containingExpr = Just e
+                                      }
+
+                S.modify (M.insert id t)
+
+                pure (Unit, SUnitLit)
+
+    locally (const $ foldM f undefined exprs)

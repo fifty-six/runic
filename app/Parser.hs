@@ -8,7 +8,10 @@ module Parser
     , Value(..)
     , BinOp(..)
     , Identifier
+    , Type(..)
     , Parameter(..)
+    , DoStatement(..)
+    , fnType
     ) where
 
 import           Control.Monad                  ( guard
@@ -30,9 +33,10 @@ type Parser = Parsec Void Text
 
 type Identifier = Text
 
-type Type = Text
+data Type = Raw Identifier | FnTy [Type] Type
+    deriving (Show, Eq, Ord)
 
-type ReturnType = Text
+type ReturnType = Type
 
 data Parameter = Parameter Identifier Type
     deriving (Show, Eq)
@@ -67,20 +71,25 @@ data BinOp
     | Or
     deriving (Show, Eq, Ord)
 
-data Expr -- Lambda [Parameter] ReturnType Expr
-    = Val Value
+data DoStatement
+    = DoExpr Expr
+    | DoLet Identifier Type Expr
+    deriving (Show, Eq)
+
+data Expr
+    = Lambda [Parameter] ReturnType Expr
+    | Val Value
     | StringLiteral Text
     | Operator BinOp Expr Expr
     | Identifier Text
-    | -- Call (func, params)
-      Call Expr [Expr]
+    | Call Expr [Expr]
     | IntLit Int
     | FloatLit Float
     | BoolLit Bool
     | UnitLit
     | Neg Expr
     | If Expr Expr Expr
-    | Do [Expr]
+    | Do [DoStatement]
     deriving (Show, Eq)
 
 -- util
@@ -100,7 +109,7 @@ lexeme = L.lexeme sc
 surround :: Parser a -> Parser b -> Parser b
 surround a = between a a
 
------ actual lang shit
+----- actual lang
 
 reserved :: [Text]
 reserved = ["true", "false", "call", "fun", "and", "do", "if"]
@@ -112,6 +121,12 @@ identifier = do
     guard $ name `notElem` reserved
 
     lexeme $ pure name
+
+ty :: Parser Type
+ty = try fnType <|> Raw <$> identifier
+
+fnType :: Parser Type
+fnType = symbol "fn" *> (FnTy <$> try (many ty) <*> (symbol "->" *> ty))
 
 pDecls :: Parser [Decl]
 pDecls = decls eof
@@ -126,17 +141,18 @@ letP :: Parser Decl
 letP = do
     void $ lexeme "let"
 
-    Let <$> identifier <*> (symbol ":" *> identifier) <*> (symbol "=" *> expr)
+    Let <$> identifier <*> (symbol ":" *> ty) <*> (symbol "=" *> expr)
 
 funP :: Parser Decl
 funP = do
     void $ lexeme "fn"
 
-    Function <$> identifier <*> many param <*> (symbol "->" *> identifier) <*> (symbol "=" *> expr)
+    Function <$> identifier <*> many param <*> (symbol "->" *> ty) <*> (symbol "=" *> expr)
 
 expr :: Parser Expr
 expr = choice
     [ try $ parens expr
+    , try func
     , try (binop "+" Add)
     , try (binop "-" Sub)
     , try (binop "*" Mul)
@@ -148,8 +164,7 @@ expr = choice
     , try (binop "/" Div)
     , try (binop "and" And)
     , try (binop "or" Or)
-    , -- , try func
-      stringLiteral
+    , stringLiteral
     , Identifier <$> try identifier
     , try call
     , try float
@@ -174,7 +189,7 @@ bool = BoolLit <$> (true <|> false)
     false = False <$ lexeme (symbol "false")
 
 extern :: Parser Decl
-extern = symbol "extern" *> (Extern <$> identifier <*> many param <*> identifier)
+extern = symbol "extern" *> (Extern <$> identifier <*> many param <*> ty)
 
 int :: Parser Expr
 int = lexeme $ IntLit <$> L.decimal
@@ -189,7 +204,15 @@ doP :: Parser Expr
 doP = do
     void $ symbol "do" *> symbol "{"
 
-    v <- Do <$> many (expr <* symbol ";")
+    let doLet = DoLet <$>
+            (symbol "let" *> identifier) <*>
+            (symbol ":" *> ty) <*>
+            (symbol "=" *> expr)
+
+    let doExpr = DoExpr <$> expr
+    let doS = (doLet <|> doExpr) <* symbol ";"
+
+    v <- Do <$> many doS
 
     void $ symbol "}"
 
@@ -211,16 +234,13 @@ stringLiteral = do
     -- stolen trick: use Haskell's string parsing to deal with escapes
     pure . StringLiteral $ read ('"' : cs str ++ "\"")
 
--- unimplemented - lambdas
--- func :: Parser Expr
--- func = parens $ symbol "fun" *> (
---         Lambda
---             <$> many param
---             <*> return_type
---             <*> (symbol "->" *> expr)
---     )
---     where
---     return_type = identifier
+func :: Parser Expr
+func = symbol "\\" *> (
+        Lambda
+            <$> many param
+            <*> ty
+            <*> (symbol "->" *> expr)
+    )
 
 param :: Parser Parameter
-param = parens (Parameter <$> identifier <*> (symbol ":" *> identifier))
+param = parens (Parameter <$> identifier <*> (symbol ":" *> ty))
