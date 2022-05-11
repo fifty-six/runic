@@ -169,15 +169,15 @@ infixL op sym = InfixL $ Operator op <$ symbol sym
 expr' :: Parser Expr
 expr' = choice
     [ try $ parens expr
-    , try func
+    , func
     , try unit
     , stringLiteral
     , Identifier <$> try identifier
-    , try call
+    , call
     , try float
-    , try neg
-    , try doP
-    , try ifP
+    , neg
+    , doP
+    , ifP
     , int
     , bool
     ]
