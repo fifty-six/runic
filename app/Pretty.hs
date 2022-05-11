@@ -213,7 +213,7 @@ instance Pretty Expr where
         BoolLit       b     -> lp b
         UnitLit             -> lit "()"
         Neg e               -> op "-" <> "(" <> pretty e <> ")"
-        Operator o lhs rhs  -> "(" <> op (pretty o) <+> pretty lhs <+> pretty rhs <> ")"
+        Operator o lhs rhs  -> "(" <> pretty lhs <+> op (pretty o) <+> pretty rhs <> ")"
         Identifier i        -> ip i
         Call f ps           -> kw "call" <+> ip f <+> P.hcat (P.punctuate " " (map pretty ps))
 
