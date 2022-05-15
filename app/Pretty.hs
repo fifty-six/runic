@@ -29,10 +29,10 @@ import qualified Prettyprinter                 as P
 import qualified Prettyprinter.Render.Terminal as P.Term
 import qualified Prettyprinter.Render.Text     as P.Text
 
+import           Data.String                    ( IsString )
 import           Typecheck                      ( SemantError(..)
                                                 , Type(..)
                                                 )
-import Data.String (IsString)
 
 layoutOptions :: Int -> LayoutOptions
 layoutOptions columns = LayoutOptions { layoutPageWidth = AvailablePerLine columns 1 }
@@ -149,15 +149,10 @@ instance Pretty SemantError where
                         (P.vcat
                             [ mempty
                             , "in expression"
-                            <+> "("
-                            <>  pretty errorExpr
-                            <>  ")"
-                            <>  maybe
-                                    mempty
-                                    (\a ->
-                                        P.line <> "contained in expression" <+> "(" <> pretty a <> ")"
-                                    )
-                                    containingExpr
+                            <+> pretty errorExpr
+                            <>  maybe mempty
+                                      ((<+>) (P.line <> "contained in expression") . pretty)
+                                      containingExpr
                             ]
                         )
         MismatchedArms { tArm1, tArm2, arm1E, arm2E } ->
@@ -222,7 +217,10 @@ instance Pretty Expr where
         Call f ps           -> ip f <+> P.hcat (P.punctuate " " (map (parens . pretty) ps))
 
         If cond arm1 arm2   -> P.vcat
-            ["(" <> kw "if", P.indent 4 $ P.vcat [parens $ pretty cond, parens $ pretty arm1, parens $ pretty arm2], ")"]
+            [ "(" <> kw "if"
+            , P.indent 4 $ P.vcat [parens $ pretty cond, parens $ pretty arm1, parens $ pretty arm2]
+            , ")"
+            ]
 
         Do exps ->
             P.cat [kw "do" <+> "{", P.indent 4 . P.vcat . map ((<> ";") . pretty) $ exps, "}"]
