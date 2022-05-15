@@ -1,4 +1,5 @@
-extern print (x: i32) unit;
+extern print  (x: i32) unit;
+extern print1 (x: f32) unit;
 
 let global: i32 = 1 * 1 + 2;
 
@@ -8,6 +9,7 @@ fn main -> unit = do {
     loop f 20 0;
     loop (\(y: i32) unit -> print y) 5 0;
     loop \(y: i32) unit -> do { print y; } 5 0;
+    print (1 + (1.0 + 2.0));
     // print _test' ();
     _test' (); // discarded atm, TODO: typecheck?
     ();

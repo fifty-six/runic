@@ -7,16 +7,13 @@ module Typecheck
     , Type(..)
     ) where
 
-import           Control.Exception              ( assert )
 import           Control.Monad                  ( foldM
                                                 , forM
                                                 , forM_
                                                 , unless
                                                 , when
                                                 )
-import           Control.Monad.Except           ( ExceptT
-                                                , MonadError()
-                                                )
+import Control.Monad.Except ( ExceptT, MonadError(), catchError )
 import qualified Control.Monad.Except          as E
 import           Control.Monad.State.Class      ( MonadState )
 import           Control.Monad.State.Strict     ( State )
@@ -84,29 +81,14 @@ data SDecl
     | SExtern Identifier [SParameter] Type
     deriving (Show, Eq)
 
-intOps :: [BinOp]
-intOps = [Add, Sub, Mul, Div]
+numOps :: [BinOp]
+numOps = [Add, Sub, Mul, Div] 
 
-ordOps :: [BinOp]
+ordOps :: [BinOp] 
 ordOps = [LeEqTo, GrEqTo, LessThan, GreaterThan]
 
 boolOps :: [BinOp]
 boolOps = [And, Or]
-
-opRes :: M.Map BinOp Type
-opRes = M.fromList
-    [ (And        , Bool)
-    , (Or         , Bool)
-    , (LeEqTo     , Bool)
-    , (GrEqTo     , Bool)
-    , (EqualTo    , Bool)
-    , (LessThan   , Bool)
-    , (GreaterThan, Bool)
-    , (Add        , I32)
-    , (Sub        , I32)
-    , (Mul        , I32)
-    , (Div        , I32)
-    ]
 
 builtinTypes :: M.Map PType Type
 builtinTypes = M.fromList
@@ -257,15 +239,19 @@ typecheck' e@(Operator op lhs rhs) = do
                                 , containingExpr = Just e
                                 }
 
-    when (op `elem` intOps || op `elem` ordOps) $ do
-        assertOfType I32
+    if | op `elem` numOps  -> do
+           assertOfType I32 `catchError` const (assertOfType F32)
+           pure (tlhs, SOperator op lhs' rhs')
 
-    when (op `elem` boolOps) $ do
-        assertOfType Bool
+       | op `elem` boolOps -> do
+           assertOfType Bool
+           pure (Bool, SOperator op lhs' rhs')
 
-    tOp <- maybe (error . printf "Invalid operator %s!" $ show op) pure $ M.lookup op opRes
+       | op `elem` ordOps -> do
+           assertOfType I32 `catchError` const (assertOfType F32)
+           pure (Bool, SOperator op lhs' rhs')
 
-    pure (tOp, SOperator op lhs' rhs')
+       | otherwise         -> throw . Internal . T.pack $ printf "Invalid operator %s!" $ show op
 
 typecheck' e@(Identifier i) = do
     m <- S.get
@@ -318,7 +304,8 @@ typecheck' e@(If cond arm1 arm2) = do
     pure (tArm1, SIf cond' arm1' arm2')
 
 typecheck' e@(Do exprs) = do
-    assert (not . null $ exprs) $ pure ()
+    when (null exprs) $ do
+        throw $ Internal "Got do block with no expressions!"
 
     let f _ = \case
             DoExpr d       -> typecheck' d
