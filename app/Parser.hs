@@ -118,9 +118,7 @@ identifier :: Parser Text
 identifier = do
     name <-
         T.cons
-        <$> (   satisfy ((||) <$> isAlpha <*> ('_' ==))
-            <?> "first character of identifier must be alpha or _"
-            )
+        <$> (satisfy ((||) <$> isAlpha <*> ('_' ==))<?> "identifier")
         <*> takeWhileP Nothing restrict
 
     guard $ name `notElem` reserved
@@ -147,7 +145,7 @@ letP :: Parser Decl
 letP = do
     void $ lexeme "let"
 
-    Let <$> identifier <*> (symbol ":" *> ty) <*> (symbol "=" *> expr' <* symbol ";")
+    Let <$> identifier <*> (symbol ":" *> ty) <*> (symbol "=" *> expr <* symbol ";")
 
 funP :: Parser Decl
 funP = do
@@ -157,7 +155,7 @@ funP = do
         <$> identifier
         <*> many param
         <*> (symbol "->" *> ty)
-        <*> (symbol "=" *> expr' <* symbol ";")
+        <*> (symbol "=" *> expr <* symbol ";")
 
 ops :: [[Operator Parser Expr]]
 ops =
@@ -173,10 +171,9 @@ ops =
 infixL :: BinOp -> Text -> Operator Parser Expr
 infixL op sym = InfixL $ Operator op <$ symbol sym
 
-expr :: Parser Expr
-expr = choice
-    [ try $ parens expr'
-    -- , parens expr'
+expr' :: Parser Expr
+expr' = choice
+    [ try $ parens expr
     , func
     , try unit
     , stringLiteral
@@ -189,11 +186,9 @@ expr = choice
     , bool
     ]
 
-expr'' :: Parser Expr
-expr'' = sub -- makeExprParser sub ops 
-  where
-    sub = choice
-        [ try $ parens expr'
+noCall :: Parser Expr
+noCall = choice
+        [ try $ parens expr
         , func
         , try unit
         , stringLiteral
@@ -205,8 +200,8 @@ expr'' = sub -- makeExprParser sub ops
         , bool
         ]
 
-expr' :: Parser Expr
-expr' = makeExprParser expr ops
+expr :: Parser Expr
+expr = makeExprParser expr' ops
 
 unit :: Parser Expr
 unit = symbol "()" $> UnitLit
@@ -239,17 +234,17 @@ doP = do
     pure v
 
   where
-    doLet  = DoLet <$> (symbol "let" *> identifier) <*> (symbol ":" *> ty) <*> (symbol "=" *> expr')
-    doExpr = DoExpr <$> expr'
+    doLet  = DoLet <$> (symbol "let" *> identifier) <*> (symbol ":" *> ty) <*> (symbol "=" *> expr)
+    doExpr = DoExpr <$> expr
 
 ifP :: Parser Expr
-ifP = symbol "if" *> (If <$> expr' <*> expr <*> expr)
+ifP = symbol "if" *> (If <$> expr <*> expr <*> expr)
 
 call :: Parser Expr
 call = Call <$> f <*> params <?> "function call"
   where
     f      = parens expr <|> (Identifier <$> try identifier) <?> "function expression"
-    params = some expr''
+    params = some noCall
 
 stringLiteral :: Parser Expr
 stringLiteral = do
@@ -264,7 +259,7 @@ func = symbol "\\" *> (
         Lambda
             <$> many param
             <*> ty
-            <*> (symbol "->" *> expr')
+            <*> (symbol "->" *> expr)
     ) <?> "lambda"
 
 param :: Parser Parameter

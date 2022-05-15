@@ -9,7 +9,7 @@ fn main -> unit = do {
     loop f 20 0;
     loop (\(y: i32) unit -> print y) 5 0;
     loop \(y: i32) unit -> do { print y; } 5 0;
-    print (1 + (1.0 + 2.0));
+    print (1 - -1);
     // print _test' ();
     _test' (); // discarded atm, TODO: typecheck?
     ();
@@ -32,14 +32,14 @@ fn loop(f: fn i32 -> unit) (upper: i32) (lower: i32) -> unit =
 fn run_fac_and_print(x: i32) -> unit = print (fac x);
 
 fn fib (x: i32) -> i32 = 
-    if (x <= 1)
+    if x <= 1
         do { 1; }
         fib (x - 1) + fib (x - 2)
 ;
 
 
 fn fac (x: i32) -> i32 = 
-    if ((x <= 1) and do { print 11; true; })
+    if (x <= 1) and do { print 11; true; }
         1 
         (x * fac (x - 1))
 ;
