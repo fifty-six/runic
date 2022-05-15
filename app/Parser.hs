@@ -17,6 +17,7 @@ module Parser
 import           Control.Monad                  ( guard
                                                 , void
                                                 )
+import           Control.Monad.Combinators.Expr
 import           Data.Char                      ( isAlpha
                                                 , isAlphaNum
                                                 )
@@ -27,7 +28,6 @@ import           Data.Void
 import           Text.Megaparsec
 import           Text.Megaparsec.Char
 import qualified Text.Megaparsec.Char.Lexer    as L
-import Control.Monad.Combinators.Expr
 
 type Parser = Parsec Void Text
 
@@ -116,15 +116,17 @@ reserved = ["true", "false", "call", "fun", "and", "do", "if"]
 
 identifier :: Parser Text
 identifier = do
-    name <- T.cons
-        <$> (satisfy ((||) <$> isAlpha <*> ('_' ==)) <?> "first character of identifier must be alpha or _")
+    name <-
+        T.cons
+        <$> (   satisfy ((||) <$> isAlpha <*> ('_' ==))
+            <?> "first character of identifier must be alpha or _"
+            )
         <*> takeWhileP Nothing restrict
 
     guard $ name `notElem` reserved
 
     lexeme $ pure name
-    where
-    restrict = or . (<$> [isAlphaNum, (== '_'), (== '\'')]) . flip ($)
+    where restrict = or . (<$> [isAlphaNum, (== '_'), (== '\'')]) . flip ($)
 
 ty :: Parser Type
 ty = (try fnType <|> Raw <$> identifier) <?> "type"
@@ -151,21 +153,22 @@ funP :: Parser Decl
 funP = do
     void $ lexeme "fn"
 
-    Function <$> identifier <*> many param <*> (symbol "->" *> ty) <*> (symbol "=" *> expr' <* symbol ";")
+    Function
+        <$> identifier
+        <*> many param
+        <*> (symbol "->" *> ty)
+        <*> (symbol "=" *> expr' <* symbol ";")
 
 ops :: [[Operator Parser Expr]]
-ops = [ [ Prefix $ Neg <$ symbol "-" ]
-      , [ infixL Mul "*" , infixL Div "/" ]
-      , [ infixL Add "+" , infixL Sub "-" ]
-      , [ infixL LeEqTo "<="
-        , infixL GrEqTo ">="
-        , infixL GreaterThan ">"
-        , infixL LessThan "<"
-        ]
-      , [ infixL EqualTo "==" ]
-      , [ infixL And "and" ]
-      , [ infixL Or "or" ]
-      ]
+ops =
+    [ [Prefix $ Neg <$ symbol "-"]
+    , [infixL Mul "*", infixL Div "/"]
+    , [infixL Add "+", infixL Sub "-"]
+    , [infixL LeEqTo "<=", infixL GrEqTo ">=", infixL GreaterThan ">", infixL LessThan "<"]
+    , [infixL EqualTo "=="]
+    , [infixL And "and"]
+    , [infixL Or "or"]
+    ]
 
 infixL :: BinOp -> Text -> Operator Parser Expr
 infixL op sym = InfixL $ Operator op <$ symbol sym
@@ -188,7 +191,7 @@ expr = choice
 
 expr'' :: Parser Expr
 expr'' = sub -- makeExprParser sub ops 
-    where
+  where
     sub = choice
         [ try $ parens expr'
         , func
@@ -227,12 +230,6 @@ doP :: Parser Expr
 doP = do
     void $ symbol "do" *> symbol "{"
 
-    let doLet = DoLet <$>
-            (symbol "let" *> identifier) <*>
-            (symbol ":" *> ty) <*>
-            (symbol "=" *> expr')
-
-    let doExpr = DoExpr <$> expr'
     let doS = (doLet <|> doExpr) <* symbol ";"
 
     v <- Do <$> many doS
@@ -241,6 +238,10 @@ doP = do
 
     pure v
 
+  where
+    doLet  = DoLet <$> (symbol "let" *> identifier) <*> (symbol ":" *> ty) <*> (symbol "=" *> expr')
+    doExpr = DoExpr <$> expr'
+
 ifP :: Parser Expr
 ifP = symbol "if" *> (If <$> expr' <*> expr <*> expr)
 
@@ -248,7 +249,7 @@ call :: Parser Expr
 call = Call <$> f <*> params <?> "function call"
   where
     f      = parens expr <|> (Identifier <$> try identifier) <?> "function expression"
-    params = some expr'' 
+    params = some expr''
 
 stringLiteral :: Parser Expr
 stringLiteral = do
@@ -257,6 +258,7 @@ stringLiteral = do
     -- stolen trick: use Haskell's string parsing to deal with escapes
     pure . StringLiteral $ read ('"' : T.unpack str ++ "\"")
 
+-- brittany-disable-next-binding
 func :: Parser Expr
 func = symbol "\\" *> (
         Lambda

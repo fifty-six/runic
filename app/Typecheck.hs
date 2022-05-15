@@ -13,7 +13,10 @@ import           Control.Monad                  ( foldM
                                                 , unless
                                                 , when
                                                 )
-import Control.Monad.Except ( ExceptT, MonadError(), catchError )
+import           Control.Monad.Except           ( ExceptT
+                                                , MonadError()
+                                                , catchError
+                                                )
 import qualified Control.Monad.Except          as E
 import           Control.Monad.State.Class      ( MonadState )
 import           Control.Monad.State.Strict     ( State )
@@ -82,9 +85,9 @@ data SDecl
     deriving (Show, Eq)
 
 numOps :: [BinOp]
-numOps = [Add, Sub, Mul, Div] 
+numOps = [Add, Sub, Mul, Div]
 
-ordOps :: [BinOp] 
+ordOps :: [BinOp]
 ordOps = [LeEqTo, GrEqTo, LessThan, GreaterThan]
 
 boolOps :: [BinOp]
@@ -192,7 +195,7 @@ typecheck' (FloatLit      f) = pure (F32, SFloatLit f)
 typecheck' (BoolLit       b) = pure (Bool, SBoolLit b)
 typecheck' UnitLit           = pure (Unit, SUnitLit)
 
-typecheck' l@(Lambda p r e) = do
+typecheck' l@(Lambda p r e)  = do
     p' <- parseParams p
     r' <- lookupTy Nothing r (Just l)
 
@@ -209,7 +212,7 @@ typecheck' l@(Lambda p r e) = do
 
     pure (Func p' r', SLambda ps r' e')
 
-typecheck' e@(Neg i)         = do
+typecheck' e@(Neg i) = do
     (i', ti) <- check i
 
     unless (ti == I32) $ do
@@ -239,19 +242,23 @@ typecheck' e@(Operator op lhs rhs) = do
                                 , containingExpr = Just e
                                 }
 
-    if | op `elem` numOps  -> do
-           assertOfType I32 `catchError` const (assertOfType F32)
-           pure (tlhs, SOperator op lhs' rhs')
-
-       | op `elem` boolOps -> do
-           assertOfType Bool
-           pure (Bool, SOperator op lhs' rhs')
-
-       | op `elem` ordOps -> do
-           assertOfType I32 `catchError` const (assertOfType F32)
-           pure (Bool, SOperator op lhs' rhs')
-
-       | otherwise         -> throw . Internal . T.pack $ printf "Invalid operator %s!" $ show op
+    if
+        | op `elem` numOps -> do
+            assertOfType I32 `catchError` const (assertOfType F32)
+            pure (tlhs, SOperator op lhs' rhs')
+        |
+--
+          op `elem` boolOps -> do
+            assertOfType Bool
+            pure (Bool, SOperator op lhs' rhs')
+        |
+--
+          op `elem` ordOps -> do
+            assertOfType I32 `catchError` const (assertOfType F32)
+            pure (Bool, SOperator op lhs' rhs')
+        |
+--
+          otherwise -> throw . Internal . T.pack $ printf "Invalid operator %s!" $ show op
 
 typecheck' e@(Identifier i) = do
     m <- S.get

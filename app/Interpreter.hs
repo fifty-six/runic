@@ -2,6 +2,7 @@ module Interpreter
     ( run1
     ) where
 
+import           Control.Arrow                  ( first )
 import           Control.Exception              ( assert )
 import           Control.Monad                  ( foldM
                                                 , when
@@ -24,11 +25,10 @@ import           Parser                         ( BinOp(..)
                                                 , Value(..)
                                                 )
 import           Prelude                 hiding ( id )
+import           Pretty                         ( renderT )
 import           Text.Pretty.Simple             ( pPrint )
 import           Text.Printf                    ( printf )
 import           Util
-import Pretty (renderT)
-import Control.Arrow (first)
 
 data Var = E Expr | F [Identifier] Expr
     deriving (Show)
@@ -50,9 +50,7 @@ runInterpreterT :: Interpreter a -> Env -> IO (Either InterpreterError a, Env)
 runInterpreterT (Interpreter i) = S.runStateT $ E.runExceptT i
 
 externs :: [(Identifier, Value -> Interpreter Value)]
-externs = [ ("print", (>> pure IUnit) . pPrint)
-          , first (const "print1") $ head externs
-          ]
+externs = [("print", (>> pure IUnit) . pPrint), first (const "print1") $ head externs]
 
 run1 :: [Decl] -> IO (Either InterpreterError Value)
 run1 decls = do
@@ -64,8 +62,8 @@ run1 decls = do
 
 setup :: [Decl] -> Env -> Env
 setup [] e = e
-setup ((Let id _ expr) : xs) e             = setup xs $ Map.insert id (E expr) e
-setup ((Extern id _ _) : xs) e             = setup xs $ Map.insert id (E . Val $ IExtern id) e
+setup ((Let id _ expr) : xs) e = setup xs $ Map.insert id (E expr) e
+setup ((Extern id _ _) : xs) e = setup xs $ Map.insert id (E . Val $ IExtern id) e
 setup ((Function id params _ expr) : xs) e = setup xs e'
   where
     e'  = Map.insert id (F ids expr) e
@@ -73,10 +71,10 @@ setup ((Function id params _ expr) : xs) e = setup xs e'
 
 op :: BinOp -> Value -> Value -> Interpreter Value
 op o (IInt a) (IInt b) = case o of
-    Add         -> pure . IInt  $ a + b
-    Sub         -> pure . IInt  $ a - b
-    Mul         -> pure . IInt  $ a * b
-    Div         -> pure . IInt  $ a `div` b
+    Add         -> pure . IInt $ a + b
+    Sub         -> pure . IInt $ a - b
+    Mul         -> pure . IInt $ a * b
+    Div         -> pure . IInt $ a `div` b
     GreaterThan -> pure . IBool $ a > b
     LessThan    -> pure . IBool $ a < b
     GrEqTo      -> pure . IBool $ a >= b
@@ -90,22 +88,25 @@ op o (IFloat a) (IFloat b) = case o of
     Sub         -> pure . IFloat $ a - b
     Mul         -> pure . IFloat $ a * b
     Div         -> pure . IFloat $ a / b
-    GreaterThan -> pure . IBool  $ a > b
-    LessThan    -> pure . IBool  $ a < b
-    GrEqTo      -> pure . IBool  $ a >= b
-    LeEqTo      -> pure . IBool  $ a <= b
-    EqualTo     -> pure . IBool  $ a == b
+    GreaterThan -> pure . IBool $ a > b
+    LessThan    -> pure . IBool $ a < b
+    GrEqTo      -> pure . IBool $ a >= b
+    LeEqTo      -> pure . IBool $ a <= b
+    EqualTo     -> pure . IBool $ a == b
     And         -> throw $ TypeError "Cannot `and` two floats"
     Or          -> throw $ TypeError "Cannot `or` two floats"
 
-op o a b = throw . TypeError $ printf "Operation %s not supported on %s and %s!" (renderT o) (typeStr a) (typeStr b)
+op o a b = throw . TypeError $ printf "Operation %s not supported on %s and %s!"
+                                      (renderT o)
+                                      (typeStr a)
+                                      (typeStr b)
 
 typeStr :: Value -> Text
 typeStr (IInt    _) = "int"
 typeStr (IBool   _) = "bool"
 typeStr (IString _) = "str"
 typeStr (IFunc _ _) = "fun"
-typeStr (IFloat  _) = "float"
+typeStr (IFloat _ ) = "float"
 typeStr IUnit       = "unit"
 typeStr (IExtern _) = "extern"
 
@@ -187,8 +188,8 @@ run (Identifier i) = do
         E expr        -> run expr
         F params expr -> pure $ IFunc params expr
 
-run (StringLiteral t             ) = pure $ IString t
-run (Operator And         lhs rhs) = do
+run (StringLiteral t     ) = pure $ IString t
+run (Operator And lhs rhs) = do
     lhs' <- run lhs
 
     case lhs' of
@@ -206,7 +207,7 @@ run (Operator Or lhs rhs) = do
             IBool b -> pure $ IBool b
             a       -> notBoolErr "rhs" "or" $ typeStr a
         a -> notBoolErr "lhs" "or" $ typeStr a
-run (Operator o    lhs rhs) = do
+run (Operator o lhs rhs) = do
     lhs' <- run lhs
     rhs' <- run rhs
 
