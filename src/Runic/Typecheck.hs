@@ -1,6 +1,6 @@
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Typecheck
+module Runic.Typecheck
     ( typecheck
     , runSemant
     , SemantError(..)
@@ -25,19 +25,19 @@ import qualified Data.Functor.Identity         as Id
 import qualified Data.Map                      as M
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
-import           Parser                         ( BinOp(..)
+import           Runic.Parser                   ( BinOp(..)
                                                 , Decl(..)
                                                 , DoStatement(..)
                                                 , Expr(..)
                                                 , Identifier
                                                 , Parameter(Parameter)
                                                 )
-import qualified Parser                        as P
+import qualified Runic.Parser                   as P
 import           Prelude                 hiding ( id
                                                 , lookup
                                                 )
 import           Text.Printf                    ( printf )
-import           Util
+import           Runic.Util
 
 type PType = P.Type
 

@@ -1,4 +1,4 @@
-module Interpreter
+module Runic.Interpreter
     ( run1
     ) where
 
@@ -16,7 +16,7 @@ import qualified Data.List                     as L
 import qualified Data.Map.Strict               as Map
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
-import           Parser                         ( BinOp(..)
+import           Runic.Parser                   ( BinOp(..)
                                                 , Decl(..)
                                                 , DoStatement(..)
                                                 , Expr(..)
@@ -25,10 +25,10 @@ import           Parser                         ( BinOp(..)
                                                 , Value(..)
                                                 )
 import           Prelude                 hiding ( id )
-import           Pretty                         ( renderT )
+import           Runic.Pretty                   ( renderT )
 import           Text.Pretty.Simple             ( pPrint )
 import           Text.Printf                    ( printf )
-import           Util
+import           Runic.Util
 
 data Var = E Expr | F [Identifier] Expr
     deriving (Show)

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Parser
+module Runic.Parser
     ( pDecls
     , expr
     , Decl(..)

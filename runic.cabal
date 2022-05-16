@@ -1,31 +1,28 @@
 cabal-version:      2.4
-name:               final
+name:               runic
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
--- synopsis:
-
--- A longer description of the package.
--- description:
-
--- A URL where users can report bugs.
--- bug-reports:
+synopsis: A small functional language
 
 -- The license under which the package is released.
--- license:
 author:             Yusuf Bham
 maintainer:         ybham6@gmail.com
 
--- A copyright notice.
--- copyright:
--- category:
--- extra-source-files: CHANGELOG.md
+license:            MPL-2.0
+license-file:       LICENSE
 
-executable final
-    main-is:          Main.hs
+library
+    hs-source-dirs:     src
+
+    exposed-modules:    Runic
+                      , Runic.Parser
+                      , Runic.Interpreter
+                      , Runic.Typecheck
+                      , Runic.Pretty
 
     -- Modules included in this executable, other than Main.
-    other-modules: Parser, Interpreter, Typecheck, Pretty, Util
+    other-modules: Runic.Util
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -33,19 +30,21 @@ executable final
                       , containers >= 0.6.5.1
                       , megaparsec >= 9.0.0
                       , pretty-simple >= 4.0.0.0
-                      , llvm-hs-pure
-                      , llvm-hs-pretty >= 0.9.0.0
+                      , optparse-applicative
                       , mtl
                       , text
                       , prettyprinter
                       , prettyprinter-ansi-terminal
-                      , optparse-applicative
                       , parser-combinators
+                      -- , llvm-hs-pure
+                      -- , llvm-hs-pretty >= 0.9.0.0
+
     ghc-options:        -Wall
                         -Wno-unused-matches
                         -Wincomplete-patterns
-    hs-source-dirs:     app
+
     default-language:   Haskell2010
+
     default-extensions: ScopedTypeVariables
                       , MultiParamTypeClasses
                       , OverloadedStrings
@@ -64,3 +63,32 @@ executable final
                       , DeriveFoldable
                       , DeriveTraversable
                       , GeneralizedNewtypeDeriving
+
+executable runic
+    main-is:            Main.hs
+
+    hs-source-dirs:     app
+
+    build-depends:      base
+                      , runic
+
+test-suite quickcheck
+    type:               exitcode-stdio-1.0
+
+    main-is:            Main.hs
+
+    build-depends:      base
+                      , HUnit
+                      , runic
+
+    ghc-options:        -Wall
+                        -Wno-unused-matches
+                        -Wincomplete-patterns
+
+    hs-source-dirs:     test
+
+    default-language:   Haskell2010
+
+    default-extensions: MultiParamTypeClasses
+                      , FlexibleInstances
+                      , TupleSections

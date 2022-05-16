@@ -1,4 +1,4 @@
-module Util where
+module Runic.Util where
 
 import qualified Control.Monad.Except          as E
 import qualified Control.Monad.State.Class     as S

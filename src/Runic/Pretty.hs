@@ -1,7 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module Pretty
+module Runic.Pretty
     ( Pretty
     , pretty
     , render
@@ -9,14 +9,14 @@ module Pretty
     ) where
 
 import           Data.Text                      ( Text )
-import           Parser                         ( BinOp(..)
+import           Runic.Parser                   ( BinOp(..)
                                                 , Decl(..)
                                                 , DoStatement(..)
                                                 , Expr(..)
                                                 , Parameter(Parameter)
                                                 , Value(..)
                                                 )
-import qualified Parser                        as P
+import qualified Runic.Parser                   as P
 import           Prelude                 hiding ( id )
 import           Prettyprinter                  ( (<+>)
                                                 , Doc
@@ -30,7 +30,7 @@ import qualified Prettyprinter.Render.Terminal as P.Term
 import qualified Prettyprinter.Render.Text     as P.Text
 
 import           Data.String                    ( IsString )
-import           Typecheck                      ( SemantError(..)
+import           Runic.Typecheck                ( SemantError(..)
                                                 , Type(..)
                                                 )
 
