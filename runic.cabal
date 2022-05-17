@@ -69,7 +69,7 @@ executable runic
 
     hs-source-dirs:     app
 
-    build-depends:      base
+    build-depends:      base ^>= 4.14.3.0
                       , runic
 
 test-suite quickcheck
@@ -77,8 +77,12 @@ test-suite quickcheck
 
     main-is:            Main.hs
 
-    build-depends:      base
-                      , HUnit
+    build-depends:      base ^>= 4.14.3.0
+                      , HUnit >= 1.6
+                      , QuickCheck >= 2.14
+                      , text
+                      , containers
+                      , mtl
                       , runic
 
     ghc-options:        -Wall

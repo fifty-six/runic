@@ -4,6 +4,10 @@ module Runic.Typecheck
     ( typecheck
     , runSemant
     , SemantError(..)
+    , Semant
+    , SExpr
+    , SExpr'(..)
+    , SDecl(..)
     , Type(..)
     ) where
 
@@ -179,6 +183,11 @@ typecheckDecl (Extern id params ret) = do
 typecheckDecl (Let id t expr) = do
     (expr', texpr) <- check expr
 
+    t' <- lookupTy (Just id) t Nothing
+
+    unless (texpr == t') $ do
+        throw $ TypeError { got = texpr, expected = t', containingExpr = Nothing, errorExpr = expr }
+
     pure $ SLet id texpr expr'
 
 check :: Expr -> Semant (SExpr, Type)
@@ -256,9 +265,9 @@ typecheck' e@(Operator op lhs rhs) = do
           op `elem` ordOps -> do
             assertOfType I32 `catchError` const (assertOfType F32)
             pure (Bool, SOperator op lhs' rhs')
-        |
+        | op == EqualTo -> pure (Bool, SOperator op lhs' rhs')
 --
-          otherwise -> throw . Internal . T.pack $ printf "Invalid operator %s!" $ show op
+        | otherwise -> throw . Internal . T.pack $ printf "Invalid operator %s!" $ show op
 
 typecheck' e@(Identifier i) = do
     m <- S.get

@@ -38,6 +38,7 @@ data InterpreterError
     | TypeError String
     | InternalError String
     | MissingMain
+    | DivideByZero
     | MainNotAFunction
     deriving (Show)
 
@@ -74,7 +75,9 @@ op o (IInt a) (IInt b) = case o of
     Add         -> pure . IInt $ a + b
     Sub         -> pure . IInt $ a - b
     Mul         -> pure . IInt $ a * b
-    Div         -> pure . IInt $ a `div` b
+    Div         -> case b of 
+        0 -> throw DivideByZero
+        _ -> pure . IInt $ a `div` b
     GreaterThan -> pure . IBool $ a > b
     LessThan    -> pure . IBool $ a < b
     GrEqTo      -> pure . IBool $ a >= b
