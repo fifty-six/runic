@@ -109,8 +109,8 @@ parens x = "(" <> x <> ")"
 
 instance Pretty DoStatement where
     pretty = \case
-        DoExpr e          -> pretty e
-        DoLet var ty expr -> kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr)
+        DoExpr e          -> pretty e <> ";"
+        DoLet var ty expr -> kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr) <> ";"
 
 instance Pretty Type where
     pretty = \case
@@ -197,10 +197,10 @@ instance Pretty Parameter where
 
 instance Pretty Decl where
     pretty = \case
-        Let var ty expr -> kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr)
+        Let var ty expr -> kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr) <> ";"
         Function fn args ret expr ->
-            kw "fn" <+> pid fn <> pargs args <+> "->" <+> pty ret <+> "=" <+> blk (pretty expr)
-        Extern e args ret -> kw "extern" <+> pid e <> pargs args <+> pty ret
+            kw "fn" <+> pid fn <> pargs args <+> "->" <+> pty ret <+> "=" <+> blk (pretty expr) <> ";"
+        Extern e args ret -> kw "extern" <+> pid e <> pargs args <+> pty ret <> ";"
 
 instance Pretty Expr where
     pretty = \case
@@ -209,7 +209,7 @@ instance Pretty Expr where
         StringLiteral s     -> lp s
         IntLit        i     -> lp i
         FloatLit      f     -> lp f
-        BoolLit       b     -> lp b
+        BoolLit       b     -> lp ((if b then "true" else "false") :: Text)
         UnitLit             -> lit "()"
         Neg e               -> op "-" <> parens (pretty e)
         Operator o lhs rhs  -> parens $ pretty lhs <+> op (pretty o) <+> pretty rhs
@@ -232,7 +232,7 @@ instance Pretty Expr where
 instance Pretty Value where
     pretty v = case v of
         IInt    i      -> vp i
-        IBool   b      -> vp b
+        IBool   b      -> vp ((if b then "true" else "false") :: Text)
         IFloat  f      -> vp f
         IString s      -> vp s
         IUnit          -> lit "()"

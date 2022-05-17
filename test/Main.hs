@@ -6,16 +6,11 @@ module Main where
 
 import Prelude hiding (id)
 import qualified Data.Map                      as M
-import qualified Data.Text                      ( )
-import           Debug.Trace                    ( trace
-                                                , traceShow
-                                                , traceShowId
-                                                )
 import           Runic.Parser                   ( BinOp(..)
                                                 , Decl(Let)
-                                                , Expr(BoolLit, IntLit, Operator, Val)
+                                                , Expr(BoolLit, IntLit, Operator, Neg)
                                                 , Type(Raw)
-                                                , Value(..)
+                                                , pDecls
                                                 )
 import           Runic.Pretty
 import           Runic.Typecheck                ( runSemant
@@ -23,6 +18,7 @@ import           Runic.Typecheck                ( runSemant
                                                 )
 import           Test.QuickCheck
 import Data.Either (isRight, isLeft)
+import Text.Megaparsec (parse)
 
 prop_Test :: Bool
 prop_Test = True
@@ -44,7 +40,12 @@ equalFreqs :: [a] -> Gen a
 equalFreqs = frequency . zip [1 ..] . map pure
 
 intE :: Gen Expr
-intE = frequency [(4, IntLit <$> arbitrary), (1, Operator <$> equalFreqs numOps <*> intE <*> intE)]
+intE = frequency 
+    -- We use positive ints because -3 gets parsed as Neg (IntLit 3)
+    [ (4, IntLit <$> (getPositive <$> arbitrary)) 
+    , (1, Neg <$> intE)
+    , (1, Operator <$> equalFreqs numOps <*> intE <*> intE)
+    ]
 
 boolE :: Gen Expr
 boolE = frequency
@@ -80,7 +81,14 @@ prop_WellTyped (WellTyped decl) = isRight $ runCheck [decl]
 prop_IllTyped :: IllTyped -> Bool
 prop_IllTyped (IllTyped decl) = isLeft $ runCheck [decl]
 
+prop_ParsePretty :: WellTyped -> Bool
+prop_ParsePretty (WellTyped decl) = case parse pDecls "-" $ renderT (pretty decl) of
+    Left _ -> False
+    Right (x:xs) -> x == decl
+    Right _ -> False
+
 main :: IO ()
 main = do
     quickCheck prop_WellTyped
     quickCheck prop_IllTyped
+    quickCheck prop_ParsePretty
