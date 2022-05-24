@@ -1,8 +1,6 @@
-{-# OPTIONS_GHC -Wno-unused-imports #-}
 {-# LANGUAGE RecursiveDo #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# HLINT ignore "Use fewer imports" #-}
+
 module Runic.Codegen where
 
 import           LLVM.AST                       ( Operand )
@@ -23,19 +21,18 @@ import           LLVM.Prelude                   ( ShortByteString )
 
 import qualified Data.Map                      as M
 
-import           Control.Applicative            ( Alternative )
 import           Control.Monad                  ( forM_
                                                 , unless
+                                                , when
                                                 )
-import           Control.Monad                  ( void )
 import           Control.Monad.Fix              ( MonadFix )
-import           Control.Monad.IO.Class         ( MonadIO )
 import           Control.Monad.State.Class      ( MonadState )
 import           Control.Monad.State.Strict     ( State
+                                                , evalState
                                                 , gets
                                                 , modify
                                                 )
-import           Control.Monad.State.Strict     ( evalState )
+import           Data.Maybe                     ( isJust )
 import           Data.String                    ( fromString )
 import           Data.String.Conversions        ( ConvertibleStrings
                                                 , convertString
@@ -43,9 +40,6 @@ import           Data.String.Conversions        ( ConvertibleStrings
                                                 )
 import           Data.Text                      ( Text )
 import qualified Data.Text                     as T
-import qualified Data.Text.Lazy.Encoding       as T
-import           LLVM.IRBuilder                 ( ModuleBuilder )
-import           LLVM.IRBuilder.Monad           ( IRBuilder )
 import           Prelude                 hiding ( id )
 import           Runic.Parser                   ( BinOp(..) )
 import           Runic.Pretty                   ( renderT )
@@ -73,17 +67,18 @@ codegenProg decls =
         mapM_ genDecls decls
 
 convType :: (MonadState Env m, L.MonadModuleBuilder m) => Type -> m AST.Type
-convType = \case
-    I32                  -> pure AST.i32
-    Unit                 -> pure (AST.NamedTypeReference (mkName "intrinsic.unit"))
-    Bool                 -> pure AST.i1
-    Char                 -> pure AST.i8
-    String               -> pure $ AST.ptr AST.i8
-    F32                  -> pure AST.float
-    Pointer ty           -> AST.ptr <$> convType ty
-    -- TODO
-    Func    params ret   -> error "todo - convType: Func" 
-    Generic name   param -> error "todo - convType: Generic"
+convType I32                    = pure AST.i32
+convType Unit                   = pure (AST.NamedTypeReference (mkName "intrinsic.unit"))
+convType Bool                   = pure AST.i1
+convType Char                   = pure AST.i8
+convType String                 = pure $ AST.ptr AST.i8
+convType F32                    = pure AST.float
+convType (Pointer ty          ) = AST.ptr <$> convType ty
+convType (Func    params ret  ) = do
+    ret'    <- convType ret
+    params' <- mapM convType params
+    pure $ AST.FunctionType ret' params' False
+convType (Generic name   param) = error "todo - convType: Generic"
 
 negateC :: Operand -> Codegen Operand
 negateC = L.sub (L.int32 0)
@@ -103,20 +98,7 @@ runCodegen :: Codegen a -> L.IRBuilderT LLVM a
 runCodegen (Codegen c) = c
 
 genDecls :: SDecl -> LLVM ()
-genDecls (SLet id ty expr@(t, e)) = do
-    -- 
-    -- 0-init global code
-    --
-    -- expr' <- genExpr expr
-    -- t' <- convType t
-    -- g <- L.global (AST.mkName $ cs id) t' $ C.Int 0 0
-    -- registerOperand id g
-    -- 
-    -- Not entirely usre how to handle globals,
-    -- Need constant evaluation I guess,
-    -- So the interpreter will have to be shelled out to, though in a non-IO context.
-    --
-    error "todo: let"
+genDecls (SLet id ty expr@(t, e)            ) = error "todo: let"
 
 genDecls (SFunction id params ty expr@(t, e)) = mdo
     _                <- registerOperand id function
@@ -192,8 +174,7 @@ genExpr (t, SCall fn params ) = do
 genExpr (t, SNeg i   ) = negateC =<< genExpr i
 
 genExpr (t, SDo exprs) = locally . const $ mdo
-    forM_ (init exprs) 
-        genExpr
+    forM_ (init exprs) genExpr
 
     genExpr $ last exprs
 
@@ -220,7 +201,7 @@ genExpr (t, SIf cond brt@(brType, _) brf) = mdo
 
     L.phi [(brf', blkF), (brt', blkT)]
 
-genExpr (t, SLambda{}        ) = error "todo: slambda"
+genExpr (t, SLambda{}                           ) = error "todo: slambda"
 
 genExpr (t, SOperator op lhs@(tl, _) rhs@(tr, _)) = do
     lhs' <- genExpr lhs
@@ -244,24 +225,28 @@ genExpr (t, SOperator op lhs@(tl, _) rhs@(tr, _)) = do
             _                -> internal "Idx"
 
         Add -> case (tl, tr) of
-            (I32      , I32) -> L.add lhs' rhs'
-            (F32      , F32) -> L.fadd lhs' rhs'
-            (Pointer _, I32) -> L.gep lhs' [rhs']
+            (I32       , I32        ) -> L.add lhs' rhs'
+            (F32       , F32        ) -> L.fadd lhs' rhs'
+            (Pointer _ , I32        ) -> L.gep lhs' [rhs']
             (Pointer ty, Pointer ty') -> do
-                unless (ty == ty') $ do
-                    error $ printf "Adding pointers of incompatible types %s %s" (renderT ty) (renderT ty')
+                unless (ty == ty') $ error $ printf
+                    "Adding pointers of incompatible types %s %s"
+                    (renderT ty)
+                    (renderT ty')
 
                 L.add lhs' rhs'
 
-            _                -> internal "Add"
+            _ -> internal "Add"
 
         Sub -> case (tl, tr) of
             (I32       , I32        ) -> L.sub lhs' rhs'
             (F32       , F32        ) -> L.fsub lhs' rhs'
             (Pointer _ , I32        ) -> L.gep lhs' =<< sequence [negateC rhs']
             (Pointer ty, Pointer ty') -> do
-                unless (ty == ty') $ do
-                    error $ printf "Subtracting pointers of incompatible types %s %s!" (renderT ty) (renderT ty')
+                unless (ty == ty') $ error $ printf
+                    "Subtracting pointers of incompatible types %s %s!"
+                    (renderT ty)
+                    (renderT ty')
 
                 -- TODO maybe, division and whatnot because ptrdiff_t nonsense
 
@@ -288,5 +273,10 @@ genExpr (t, SOperator op lhs@(tl, _) rhs@(tr, _)) = do
         Or          -> L.or lhs' rhs'
 
 registerOperand :: MonadState Env m => Text -> Operand -> m ()
-registerOperand name op = modify $ \e -> e { operands = M.insert name op (operands e) }
+registerOperand name op = do
+    ops <- gets operands
+
+    when (isJust $ M.lookup name ops) $ error $ printf "Duplicate operand %s!" name
+
+    modify $ \e -> e { operands = M.insert name op (operands e) }
 
