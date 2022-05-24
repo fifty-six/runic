@@ -20,6 +20,7 @@ library
                       , Runic.Interpreter
                       , Runic.Typecheck
                       , Runic.Pretty
+                      , Runic.Codegen
 
     -- Modules included in this executable, other than Main.
     other-modules: Runic.Util
@@ -36,8 +37,12 @@ library
                       , prettyprinter
                       , prettyprinter-ansi-terminal
                       , parser-combinators
-                      -- , llvm-hs-pure
-                      -- , llvm-hs-pretty >= 0.9.0.0
+                      , string-conversions
+                      , bytestring
+                      , directory
+                      , process
+                      , llvm-hs-pure
+                      , llvm-hs-pretty >= 0.9.0.0
 
     ghc-options:        -Wall
                         -Wno-unused-matches
@@ -68,6 +73,7 @@ executable runic
     main-is:            Main.hs
 
     hs-source-dirs:     app
+    default-language:   Haskell2010
 
     build-depends:      base ^>= 4.14.3.0
                       , runic

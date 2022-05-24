@@ -83,8 +83,7 @@ op o (IInt a) (IInt b) = case o of
     GrEqTo      -> pure . IBool $ a >= b
     LeEqTo      -> pure . IBool $ a <= b
     EqualTo     -> pure . IBool $ a == b
-    And         -> throw $ TypeError "Cannot `and` two ints"
-    Or          -> throw $ TypeError "Cannot `or` two ints"
+    _           -> throw $ TypeError $ printf "Cannot %s two ints!" (renderT o)
 
 op o (IFloat a) (IFloat b) = case o of
     Add         -> pure . IFloat $ a + b
@@ -96,8 +95,11 @@ op o (IFloat a) (IFloat b) = case o of
     GrEqTo      -> pure . IBool $ a >= b
     LeEqTo      -> pure . IBool $ a <= b
     EqualTo     -> pure . IBool $ a == b
-    And         -> throw $ TypeError "Cannot `and` two floats"
-    Or          -> throw $ TypeError "Cannot `or` two floats"
+    _           -> throw $ TypeError $ printf "Cannot %s two floats!" (renderT o)
+
+op Add (IPtr t a) (IInt b) = pure . IPtr t $ a + b
+op Sub (IPtr t a) (IInt b) = pure . IPtr t $ a - b
+op Idx (IPtr t a) (IInt b) = pure . IPtr t $ a - b
 
 op o a b = throw . TypeError $ printf "Operation %s not supported on %s and %s!"
                                       (renderT o)
@@ -112,6 +114,7 @@ typeStr (IFunc _ _) = "fun"
 typeStr (IFloat _ ) = "float"
 typeStr IUnit       = "unit"
 typeStr (IExtern _) = "extern"
+typeStr (IPtr t _)  = "*" <> renderT t
 
 notBoolErr :: Text -> Text -> Text -> Interpreter a
 notBoolErr a b c = throw $ TypeError (printf "Expected boolean to %s of %s, got %s" a b c)

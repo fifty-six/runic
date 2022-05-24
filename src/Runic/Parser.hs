@@ -33,7 +33,7 @@ type Parser = Parsec Void Text
 
 type Identifier = Text
 
-data Type = Raw Identifier | FnTy [Type] Type
+data Type = Raw Identifier | FnTy [Type] Type | Generic Identifier Type | Pointer Type
     deriving (Show, Eq, Ord)
 
 type ReturnType = Type
@@ -52,6 +52,7 @@ data Value
     | IBool Bool
     | IString Text
     | IFloat Float
+    | IPtr Type Int
     | IUnit
     | IFunc [Identifier] Expr
     | IExtern Identifier
@@ -69,6 +70,7 @@ data BinOp
     | EqualTo
     | And
     | Or
+    | Idx
     deriving (Show, Eq, Ord)
 
 data DoStatement
@@ -118,7 +120,7 @@ identifier :: Parser Text
 identifier = do
     name <-
         T.cons
-        <$> (satisfy ((||) <$> isAlpha <*> ('_' ==))<?> "identifier")
+        <$> (satisfy ((||) <$> isAlpha <*> ('_' ==)) <?> "identifier")
         <*> takeWhileP Nothing restrict
 
     guard $ name `notElem` reserved
@@ -127,7 +129,11 @@ identifier = do
     where restrict = or . (<$> [isAlphaNum, (== '_'), (== '\'')]) . flip ($)
 
 ty :: Parser Type
-ty = (try fnType <|> Raw <$> identifier) <?> "type"
+ty = choice [ try fnType
+            , Pointer <$> (symbol "*" *> ty)
+            , try $ Generic <$> identifier <*> parens ty
+            , Raw <$> identifier
+            ] <?> "type"
 
 fnType :: Parser Type
 fnType = symbol "fn" *> (FnTy <$> try (many ty) <*> (symbol "->" *> ty))
@@ -160,6 +166,7 @@ funP = do
 ops :: [[Operator Parser Expr]]
 ops =
     [ [Prefix $ Neg <$ symbol "-"]
+    , [infixL Idx "!"]
     , [infixL Mul "*", infixL Div "/"]
     , [infixL Add "+", infixL Sub "-"]
     , [infixL LeEqTo "<=", infixL GrEqTo ">=", infixL GreaterThan ">", infixL LessThan "<"]

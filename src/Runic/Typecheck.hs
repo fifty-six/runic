@@ -3,6 +3,7 @@
 module Runic.Typecheck
     ( typecheck
     , runSemant
+    , SParameter(..)
     , SemantError(..)
     , Semant
     , SExpr
@@ -11,8 +12,7 @@ module Runic.Typecheck
     , Type(..)
     ) where
 
-import           Control.Monad                  ( foldM
-                                                , forM
+import           Control.Monad                  ( forM
                                                 , forM_
                                                 , unless
                                                 , when
@@ -42,10 +42,19 @@ import           Prelude                 hiding ( id
                                                 )
 import           Text.Printf                    ( printf )
 import           Runic.Util
+import Data.Maybe (isJust)
 
 type PType = P.Type
 
-data Type = I32 | Unit | Bool | String | F32 | Func [Type] Type
+data Type = I32 
+          | Unit 
+          | Bool 
+          | String 
+          | Char
+          | F32 
+          | Func [Type] Type 
+          | Generic Identifier Type 
+          | Pointer Type
     deriving (Eq, Show)
 
 data SemantError = IdentifierNotInScope { var :: Text, varExpr :: Expr }
@@ -56,6 +65,7 @@ data SemantError = IdentifierNotInScope { var :: Text, varExpr :: Expr }
                  | TypeError { expected :: Type, got :: Type, containingExpr :: Maybe Expr, errorExpr :: Expr }
                  | MismatchedArms { tArm1 :: Type, tArm2 :: Type, arm1E :: Expr, arm2E :: Expr }
                  | NotAFunction { fnExpr :: Expr, callExpr :: Expr }
+                 | DuplicateDeclarationError { decl :: Text }
                  deriving Show
 
 type Env = M.Map Text Type
@@ -77,6 +87,7 @@ data SExpr'
     | SIf SExpr SExpr SExpr
     | SLambda [SParameter] Type SExpr
     | SDo [SExpr]
+    | SDoLet Identifier Type SExpr
     deriving (Show, Eq)
 
 data SParameter = SParameter Identifier Type
@@ -119,6 +130,9 @@ lookupTy n t expr = do
             let lookup l = lookupTy Nothing l Nothing
             params' <- mapM lookup params
             Func params' <$> lookup ret
+        P.Generic name subtype -> do
+            Generic name <$> lookupTy Nothing subtype Nothing
+        P.Pointer subtype -> Pointer <$> lookupTy Nothing subtype Nothing
 
 addSym :: Text -> PType -> Expr -> Semant ()
 addSym sym ty e = lookupTy (Just sym) ty (Just e) >>= S.modify . M.insert sym
@@ -131,6 +145,12 @@ typecheck decls = do
     let addF s p r expr = do
             params <- parseParams p
             ret    <- lookupTy Nothing r expr
+
+            get <- S.gets (M.lookup s)
+
+            when (isJust get) $ do
+                throw $ DuplicateDeclarationError { decl = s }
+
             S.modify (M.insert s $ Func params ret)
 
     forM_ decls $ \case
@@ -323,11 +343,11 @@ typecheck' e@(Do exprs) = do
     when (null exprs) $ do
         throw $ Internal "Got do block with no expressions!"
 
-    let f _ = \case
+    let f = \case
             DoExpr d       -> typecheck' d
             DoLet id ty ex -> do
                 t        <- lookupTy (Just id) ty (Just ex)
-                (_, ty') <- check ex
+                (ex', ty') <- check ex
 
                 unless (t == ty') $ do
                     throw $ TypeError { got            = ty'
@@ -338,6 +358,9 @@ typecheck' e@(Do exprs) = do
 
                 S.modify (M.insert id t)
 
-                pure (Unit, SUnitLit)
+                pure (Unit, SDoLet id t ex')
 
-    locally (const $ foldM f undefined exprs)
+    exprs' <- locally (const $ mapM f exprs)
+
+    pure (fst . last $ exprs', SDo exprs')
+

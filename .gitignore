@@ -1,3 +1,6 @@
+out.ll
+*.out
+
 dist
 dist-*
 cabal-dev
