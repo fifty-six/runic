@@ -11,7 +11,6 @@ import qualified LLVM.AST.FloatingPointPredicate
 import qualified LLVM.AST.IntegerPredicate     as IP
 import           LLVM.AST.Name
 import qualified LLVM.AST.Type                 as AST
-import           LLVM.AST.Typed                 ( typeOf )
 
 import qualified LLVM.IRBuilder.Constant       as L
 import qualified LLVM.IRBuilder.Instruction    as L
@@ -25,9 +24,8 @@ import           Control.Monad                  ( forM_
                                                 , unless
                                                 , when
                                                 )
-import           Control.Monad.Fix              ( MonadFix )
 import           Control.Monad.State.Class      ( MonadState )
-import           Control.Monad.State.Strict     ( State
+import           Control.Monad.State ( State
                                                 , evalState
                                                 , gets
                                                 , modify
@@ -47,14 +45,15 @@ import           Runic.Typecheck
 import           Runic.Util                     ( locally )
 import           Text.Printf                    ( printf )
 
+import Control.Monad.Trans (lift)
+
 data Env = Env
     { operands :: M.Map Text Operand
     , strings  :: M.Map Text Operand
     }
 
 type LLVM = L.ModuleBuilderT (State Env)
-newtype Codegen a = Codegen (L.IRBuilderT LLVM a)
-    deriving (Functor, Applicative, Monad, L.MonadIRBuilder, MonadFix, MonadState Env, L.MonadModuleBuilder)
+type Codegen = L.IRBuilderT LLVM
 
 instance ConvertibleStrings Text ShortByteString where
     convertString = fromString . T.unpack
@@ -74,11 +73,11 @@ convType Char                   = pure AST.i8
 convType String                 = pure $ AST.ptr AST.i8
 convType F32                    = pure AST.float
 convType (Pointer ty          ) = AST.ptr <$> convType ty
+convType (Generic name   param) = error "todo - convType: Generic"
 convType (Func    params ret  ) = do
     ret'    <- convType ret
     params' <- mapM convType params
-    pure $ AST.FunctionType ret' params' False
-convType (Generic name   param) = error "todo - convType: Generic"
+    pure . AST.ptr $ AST.FunctionType ret' params' False
 
 negateC :: Operand -> Codegen Operand
 negateC = L.sub (L.int32 0)
@@ -86,48 +85,51 @@ negateC = L.sub (L.int32 0)
 mkTerminator :: Codegen () -> Codegen ()
 mkTerminator instr = L.hasTerminator >>= flip unless instr
 
-lookupInternal :: MonadState Env m => Text -> m Operand
-lookupInternal id = do
+-- lookupInternal :: MonadState Env m => Text -> m Operand
+lookupInternal :: (MonadState Env m, L.MonadModuleBuilder m) => Type -> Text -> m Operand
+lookupInternal t id = mdo
     v <- gets $ M.lookup id . operands
 
     case v of
         Just a  -> pure a
         Nothing -> error $ printf "Unable to get lvalue %s" id
 
-runCodegen :: Codegen a -> L.IRBuilderT LLVM a
-runCodegen (Codegen c) = c
+genFunc :: Name -> [SParameter] -> Type -> SExpr -> LLVM Operand
+genFunc id params t expr = do
+    (function, strs) <- locally $ const $ mdo
+        t'      <- convType t
+        params' <- mapM mkParam params
+
+        fun     <- L.function id params' t' genFuncBody
+
+        strs'   <- gets strings
+        pure (fun, strs')
+
+    modify $ \env -> env { strings =  strs }
+
+    pure function
+
+    where
+    mkParam (SParameter pid pty) = (,) <$> convType pty <*> pure (L.ParameterName $ cs pid)
+
+    genFuncBody :: [Operand] -> Codegen ()
+    genFuncBody ops = do
+        forM_ (zip ops params) $ \(op, SParameter pid pty) -> mdo
+            registerOperand pid op
+
+        expr' <- genExpr expr
+
+        L.ret expr'
 
 genDecls :: SDecl -> LLVM ()
 genDecls (SLet id ty expr@(t, e)            ) = error "todo: let"
 
 genDecls (SFunction id params ty expr@(t, e)) = mdo
-    _                <- registerOperand id function
+    _        <- registerOperand id function
 
-    (function, strs) <- locally $ const $ mdo
-        t'      <- convType t
-        params' <- mapM mkParam params
+    function <- genFunc (AST.mkName . cs $ id) params ty expr
 
-        fun     <- L.function (AST.mkName $ cs id) params' t' (runCodegen . genFunc)
-
-        strs'   <- gets strings
-        pure (fun, strs')
-
-
-    modify $ \env -> env { strings = strs }
-
-  where
-    mkParam (SParameter pid pty) = (,) <$> convType pty <*> pure (L.ParameterName $ cs pid)
-
-    genFunc :: [Operand] -> Codegen ()
-    genFunc ops = do
-        forM_ (zip ops params) $ \(op, SParameter pid pty) -> mdo
-            addr <- L.alloca (typeOf op) Nothing 0
-            L.store addr 0 op
-            registerOperand pid addr
-
-        expr' <- genExpr expr
-
-        L.ret expr'
+    pure ()
 
 genDecls (SExtern id params ty) = do
     params' <- mapM (\(SParameter pid pty) -> convType pty) params
@@ -163,7 +165,7 @@ genExpr (_, SBoolLit _      ) = error "Got literal with incorrect type!"
 genExpr (_, SUnitLit        ) = error "Got literal with incorrect type!"
 genExpr (_, SStringLiteral _) = error "Got literal with incorrect type!"
 
-genExpr (t, SIdentifier id  ) = lookupInternal id
+genExpr (t, SIdentifier id  ) = lookupInternal t id -- AST.LocalReference <$> convType t <*> (pure . AST.mkName $ T.unpack id) -- lookupInternal id
 
 genExpr (t, SCall fn params ) = do
     params' <- mapM (fmap (, []) . genExpr) params
@@ -173,10 +175,15 @@ genExpr (t, SCall fn params ) = do
 
 genExpr (t, SNeg i   ) = negateC =<< genExpr i
 
-genExpr (t, SDo exprs) = locally . const $ mdo
-    forM_ (init exprs) genExpr
+genExpr (t, SDo exprs) = mdo
+    (e', strs) <- locally . const $ mdo
+        forM_ (init exprs) genExpr
 
-    genExpr $ last exprs
+        (,) <$> genExpr (last exprs) <*> gets strings
+
+    modify $ \e -> e { strings = strs }
+
+    pure e'
 
 genExpr (t, SDoLet id ty expr) = do
     op <- genExpr expr
@@ -201,7 +208,9 @@ genExpr (t, SIf cond brt@(brType, _) brf) = mdo
 
     L.phi [(brf', blkF), (brt', blkT)]
 
-genExpr (t, SLambda{}                           ) = error "todo: slambda"
+genExpr (t, SLambda params ty expr) = do
+    name <- L.fresh
+    lift $ genFunc name params ty expr
 
 genExpr (t, SOperator op lhs@(tl, _) rhs@(tr, _)) = do
     lhs' <- genExpr lhs
