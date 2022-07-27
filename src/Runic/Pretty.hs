@@ -6,6 +6,11 @@ module Runic.Pretty
     , pretty
     , render
     , renderT
+    , kw
+    , id
+    , idType
+    , lit
+    , op
     ) where
 
 import           Data.Text                      ( Text )
@@ -16,7 +21,7 @@ import           Runic.Parser                   ( BinOp(..)
                                                 , Parameter(Parameter)
                                                 , Value(..)
                                                 )
-import qualified Runic.Parser                   as P
+import qualified Runic.Parser                  as P
 import           Prelude                 hiding ( id )
 import           Prettyprinter                  ( (<+>)
                                                 , Doc
@@ -109,43 +114,52 @@ parens x = "(" <> x <> ")"
 
 instance Pretty DoStatement where
     pretty = \case
-        DoExpr e          -> pretty e <> ";"
-        DoLet var ty expr -> kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr) <> ";"
+        DoExpr e -> pretty e <> ";"
+        DoLet var ty expr ->
+            kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr) <> ";"
 
 instance Pretty Type where
     pretty = \case
-        I32           -> idType "i32"
-        Char          -> idType "char"
-        Unit          -> idType "unit"
-        Bool          -> idType "bool"
-        String        -> idType "str"
-        F32           -> idType "f32"
-        Func tys ty   -> kw "fn" <+> foldMap it tys <+> "->" <+> it ty
-        Generic ty inner -> it ty <> "(" <> it inner <> ")"
-        Pointer ty    -> "*" <> it ty
+        I32               -> idType "i32"
+        Char              -> idType "char"
+        Unit              -> idType "unit"
+        Bool              -> idType "bool"
+        String            -> idType "str"
+        F32               -> idType "f32"
+        Func    tys ty    -> kw "fn" <+> foldMap it tys <+> "->" <+> it ty
+        Generic ty  inner -> it ty <> "(" <> it inner <> ")"
+        Pointer ty        -> "*" <> it ty
         where it = idType . pretty
 
 instance Pretty SemantError where
     pretty = \case
         NotEnoughArguments { callExpr, expectedCt, gotCt } ->
-            kw "error:" <+> "Expected to get"
+            kw "error:"
+                <+> "Expected to get"
                 <+> pretty expectedCt
                 <+> "arguments in call expression"
                 <+> pretty callExpr
                 <+> "but got"
                 <+> pretty gotCt
         IdentifierNotInScope { var, varExpr } ->
-            kw "error:" <+> "identifier" <+> id (pretty var) <+> "not in scope in" <+> pretty varExpr
+            kw "error:"
+                <+> "identifier"
+                <+> id (pretty var)
+                <+> "not in scope in"
+                <+> pretty varExpr
         TypeNotInScope { tVar, tBind } ->
-            kw "error:" <+> "type "
-                <> id (pretty tVar)
-                <> maybe mempty ((" in binding " <+>) . pretty) tBind
+            kw "error:"
+                <+> "type "
+                <>  id (pretty tVar)
+                <>  maybe mempty ((" in binding " <+>) . pretty) tBind
                 <+> "not in scope!"
         Internal e -> "Internal error! " <> pretty e
         NoMain     -> "Program is missing a main!"
-        DuplicateDeclarationError { decl } -> kw "error:" <+> "several declarations of" <+> id (pretty decl) <> "!"
+        DuplicateDeclarationError { decl } ->
+            kw "error:" <+> "several declarations of" <+> id (pretty decl) <> "!"
         TypeError { expected, got, errorExpr, containingExpr } ->
-            kw "error:" <+> "Expected type"
+            kw "error:"
+                <+> "Expected type"
                 <+> idType (pretty expected)
                 <+> "but got"
                 <+> idType (pretty got)
@@ -160,7 +174,8 @@ instance Pretty SemantError where
                             ]
                         )
         MismatchedArms { tArm1, tArm2, arm1E, arm2E } ->
-            kw "error:" <+> "if arms have mismatched types, first arm has type"
+            kw "error:"
+                <+> "if arms have mismatched types, first arm has type"
                 <+> pretty tArm1
                 <+> "but second arm has type"
                 <+> pretty tArm2
@@ -171,13 +186,17 @@ instance Pretty SemantError where
                 <>  "second arm:"
                 <+> pretty arm2E
         NotAFunction { fnExpr, callExpr } ->
-            kw "error:" <+> "tried calling non-function" <+> pretty fnExpr <+> "in expression" <+> pretty callExpr
+            kw "error:"
+                <+> "tried calling non-function"
+                <+> pretty fnExpr
+                <+> "in expression"
+                <+> pretty callExpr
 
 instance Pretty P.Type where
     pretty = \case
         P.Generic t inner -> id (pretty t) <> "(" <> id (pretty inner) <> ")"
-        P.Pointer t -> id "*" <> id (pretty t)
-        P.Raw t -> id $ pretty t
+        P.Pointer t       -> id "*" <> id (pretty t)
+        P.Raw     t       -> id $ pretty t
         P.FnTy ps ret ->
             "fn" <+> foldr ((<+>) . id . pretty) mempty ps <+> "->" <+> id (pretty ret)
 
@@ -204,9 +223,17 @@ instance Pretty Parameter where
 
 instance Pretty Decl where
     pretty = \case
-        Let var ty expr -> kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr) <> ";"
+        Let var ty expr ->
+            kw "let" <+> pid var <> ":" <+> pty ty <+> "= " <> blk (pretty expr) <> ";"
         Function fn args ret expr ->
-            kw "fn" <+> pid fn <> pargs args <+> "->" <+> pty ret <+> "=" <+> blk (pretty expr) <> ";"
+            kw "fn"
+                <+> pid fn
+                <>  pargs args
+                <+> "->"
+                <+> pty ret
+                <+> "="
+                <+> blk (pretty expr)
+                <>  ";"
         Extern e args ret -> kw "extern" <+> pid e <> pargs args <+> pty ret <> ";"
 
 instance Pretty Expr where
@@ -246,6 +273,6 @@ instance Pretty Value where
         IUnit          -> lit "()"
         IFunc params e -> lit "fn" <+> foldr ((<+>) . vp) mempty params <+> vp e
         IExtern params -> undefined
-        where 
+      where
         vp = annotateColor P.Term.White . pretty
         wh = annotateColor P.Term.White

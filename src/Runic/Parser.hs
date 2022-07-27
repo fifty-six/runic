@@ -129,11 +129,14 @@ identifier = do
     where restrict = or . (<$> [isAlphaNum, (== '_'), (== '\'')]) . flip ($)
 
 ty :: Parser Type
-ty = choice [ try fnType
+ty =
+    choice
+            [ try fnType
             , Pointer <$> (symbol "*" *> ty)
             , try $ Generic <$> identifier <*> parens ty
             , Raw <$> identifier
-            ] <?> "type"
+            ]
+        <?> "type"
 
 fnType :: Parser Type
 fnType = symbol "fn" *> (FnTy <$> try (many ty) <*> (symbol "->" *> ty))
@@ -195,17 +198,17 @@ expr' = choice
 
 noCall :: Parser Expr
 noCall = choice
-        [ try $ parens expr
-        , func
-        , try unit
-        , stringLiteral
-        , Identifier <$> try identifier
-        , try float
-        , doP
-        , ifP
-        , int
-        , bool
-        ]
+    [ try $ parens expr
+    , func
+    , try unit
+    , stringLiteral
+    , Identifier <$> try identifier
+    , try float
+    , doP
+    , ifP
+    , int
+    , bool
+    ]
 
 expr :: Parser Expr
 expr = makeExprParser expr' ops

@@ -72,10 +72,10 @@ setup ((Function id params _ expr) : xs) e = setup xs e'
 
 op :: BinOp -> Value -> Value -> Interpreter Value
 op o (IInt a) (IInt b) = case o of
-    Add         -> pure . IInt $ a + b
-    Sub         -> pure . IInt $ a - b
-    Mul         -> pure . IInt $ a * b
-    Div         -> case b of 
+    Add -> pure . IInt $ a + b
+    Sub -> pure . IInt $ a - b
+    Mul -> pure . IInt $ a * b
+    Div -> case b of
         0 -> throw DivideByZero
         _ -> pure . IInt $ a `div` b
     GreaterThan -> pure . IBool $ a > b
@@ -101,10 +101,10 @@ op Add (IPtr t a) (IInt b) = pure . IPtr t $ a + b
 op Sub (IPtr t a) (IInt b) = pure . IPtr t $ a - b
 op Idx (IPtr t a) (IInt b) = pure . IPtr t $ a - b
 
-op o a b = throw . TypeError $ printf "Operation %s not supported on %s and %s!"
-                                      (renderT o)
-                                      (typeStr a)
-                                      (typeStr b)
+op o   a          b        = throw . TypeError $ printf "Operation %s not supported on %s and %s!"
+                                                        (renderT o)
+                                                        (typeStr a)
+                                                        (typeStr b)
 
 typeStr :: Value -> Text
 typeStr (IInt    _) = "int"
@@ -114,7 +114,7 @@ typeStr (IFunc _ _) = "fun"
 typeStr (IFloat _ ) = "float"
 typeStr IUnit       = "unit"
 typeStr (IExtern _) = "extern"
-typeStr (IPtr t _)  = "*" <> renderT t
+typeStr (IPtr t _ ) = "*" <> renderT t
 
 notBoolErr :: Text -> Text -> Text -> Interpreter a
 notBoolErr a b c = throw $ TypeError (printf "Expected boolean to %s of %s, got %s" a b c)

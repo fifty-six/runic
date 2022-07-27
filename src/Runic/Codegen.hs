@@ -25,7 +25,7 @@ import           Control.Monad                  ( forM_
                                                 , when
                                                 )
 import           Control.Monad.State.Class      ( MonadState )
-import           Control.Monad.State ( State
+import           Control.Monad.State            ( State
                                                 , evalState
                                                 , gets
                                                 , modify
@@ -45,7 +45,7 @@ import           Runic.Typecheck
 import           Runic.Util                     ( locally )
 import           Text.Printf                    ( printf )
 
-import Control.Monad.Trans (lift)
+import           Control.Monad.Trans            ( lift )
 
 data Env = Env
     { operands :: M.Map Text Operand
@@ -105,11 +105,11 @@ genFunc id params t expr = do
         strs'   <- gets strings
         pure (fun, strs')
 
-    modify $ \env -> env { strings =  strs }
+    modify $ \env -> env { strings = strs }
 
     pure function
 
-    where
+  where
     mkParam (SParameter pid pty) = (,) <$> convType pty <*> pure (L.ParameterName $ cs pid)
 
     genFuncBody :: [Operand] -> Codegen ()

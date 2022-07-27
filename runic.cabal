@@ -21,6 +21,8 @@ library
                       , Runic.Typecheck
                       , Runic.Pretty
                       , Runic.Codegen
+                      , Runic.Types
+                      , Runic.Context
 
     -- Modules included in this executable, other than Main.
     other-modules: Runic.Util
