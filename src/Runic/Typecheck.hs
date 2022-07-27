@@ -1,42 +1,28 @@
-{-# LANGUAGE NamedFieldPuns #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 
 module Runic.Typecheck () where
 
-import           Control.Monad                  ( forM
-                                                , forM_
-                                                , unless
-                                                , when
-                                                )
 import           Control.Monad.Except           ( ExceptT
                                                 , MonadError()
-                                                , catchError
+                                                
                                                 )
 import qualified Control.Monad.Except          as E
 import           Control.Monad.State.Class      ( MonadState )
 import           Control.Monad.State.Strict     ( State )
 import qualified Control.Monad.State.Strict    as S
-import qualified Data.Functor.Identity         as Id
-import qualified Data.Map                      as M
 import           Data.Text                      ( Text )
-import qualified Data.Text                     as T
-import           Runic.Parser                   ( BinOp(..)
-                                                , Decl(..)
-                                                , DoStatement(..)
-                                                , Expr(..)
-                                                , Identifier
-                                                , Parameter(Parameter)
+import           Runic.Parser                   ( Identifier
+                                                
                                                 )
 import qualified Runic.Parser                  as P
 import           Prelude                 hiding ( id
                                                 , lookup
                                                 )
-import           Text.Printf                    ( printf )
 import           Runic.Util
 import           Runic.Context                  ( Context )
 import qualified Runic.Context                 as Ctx
-import           Data.Maybe                     ( isJust )
-import Runic.Types (Type(..), Scalar(..), Polytype)
-import qualified Data.List as L
+import Runic.Types (Type(..), Polytype)
 import Control.Arrow (second)
 
 type PType = P.Type
@@ -53,57 +39,21 @@ type PType = P.Type
 --     deriving (Eq, Show)
 
 data TypeError = TypeNotInScope Identifier
-
--- data SemantError = IdentifierNotInScope { var :: Text, varExpr :: Expr }
---                  | TypeNotInScope { tBind :: Maybe Text, tVar :: Text, tExpr :: Maybe Expr }
---                  | Internal Text
---                  | NotEnoughArguments { callExpr :: Expr, expectedCt :: Int, gotCt :: Int }
---                  | NoMain
---                  | TypeError { expected :: Type, got :: Type, containingExpr :: Maybe Expr, errorExpr :: Expr }
---                  | MismatchedArms { tArm1 :: Type, tArm2 :: Type, arm1E :: Expr, arm2E :: Expr }
---                  | NotAFunction { fnExpr :: Expr, callExpr :: Expr }
---                  | DuplicateDeclarationError { decl :: Text }
---                  deriving Show
+               | Internal Text
 
 type Env = Context
 
 newtype Semant a = Semant (ExceptT TypeError (State Env) a)
     deriving (Functor, Applicative, Monad, MonadState Env, MonadError TypeError)
 
--- type SExpr = (Type, SExpr')
--- data SExpr'
---     = SStringLiteral Text
---     | SIntLit Int
---     | SFloatLit Float
---     | SBoolLit Bool
---     | SUnitLit
---     | SOperator BinOp SExpr SExpr
---     | SIdentifier Text
---     | SCall SExpr [SExpr]
---     | SNeg SExpr
---     | SIf SExpr SExpr SExpr
---     | SLambda [SParameter] Type SExpr
---     | SDo [SExpr]
---     | SDoLet Identifier Type SExpr
---     deriving (Show, Eq)
--- 
--- data SParameter = SParameter Identifier Type
---     deriving (Show, Eq)
--- 
--- data SDecl
---     = SLet Identifier Type SExpr
---     | SFunction Identifier [SParameter] Type SExpr
---     | SExtern Identifier [SParameter] Type
---     deriving (Show, Eq)
-
 hole :: Eq a => a -> [a] -> ([a], [a])
 hole a = second tailS . break (== a)
-  where 
+  where
   tailS (x:xs) = xs
   tailS [] = []
 
 wellFormed :: Context -> Type a -> Semant ()
-wellFormed gamma ty = do
+wellFormed gamma ty =
     case ty of
         -- UnitWF
         Unit -> pure ()
@@ -111,25 +61,53 @@ wellFormed gamma ty = do
         -- Similar to UnitWF, Scalars are well-formed.
         Scalar _ -> pure ()
 
-        -- As are pointers
-        Pointer _ -> pure ()
+        -- Check that the type being pointed to is wf 
+        Pointer p -> wellFormed gamma p
 
         -- UvarWF
         Var id | Ctx.Var id `elem` gamma -> return ()
                | otherwise       -> throw $ TypeNotInScope id
 
         -- ArrowWF
+        -- Check that both the input and outputs are well-formed.
         Fn from to -> do
             wellFormed gamma from
             wellFormed gamma to
 
-        -- ForallWF
-        ForAll alpha ty'  -> wellFormed (Ctx.Var alpha : gamma) ty
+        -- ForallWF, wf if ty' is wf in the extended context
+        -- i.e. \forall a. b, -> b is wf is it's wf with a in the context 
+        ForAll alpha ty'  -> wellFormed (Ctx.Var alpha : gamma) ty'
 
+        -- Well-formed if we can put the existential in the context.
+        -- or solved??
         Exists alpha' -> wellFormed (Ctx.Var alpha' : gamma) ty
 
+solve :: Context -> Polytype -> Maybe Polytype
+solve gamma (Exists a) = 
+    case filter isSol gamma of
+        [Ctx.EVar id ty] -> Just ty
+        []               -> Nothing
+        x                -> error $ "Internal error, multiple solutions to existential. " ++ show x
+
+    where
+    isSol (Ctx.EVar id ty) = id == a
+    isSol _ = False
+-- I should probably make this type safe but that's so much effort
+solve gamma _ = error "tried to solve non-existential"
+
 substituteCtx :: Context -> Polytype -> Polytype
-substituteCtx gamma alpha@(Exists a) = maybe alpha (\(Ctx.EVar id ty) -> ty) (L.find canSub gamma)
-  where
-  canSub (Ctx.EVar id ty) = id == a
-  canSub _ = False
+substituteCtx gamma alpha = case alpha of
+        Exists a -> maybe alpha (substituteCtx gamma) (solve gamma alpha)
+
+        ForAll a ty -> ForAll a $ substituteCtx gamma ty
+
+        Pointer p -> substituteCtx gamma p
+
+        Fn a b -> Fn (substituteCtx gamma a) (substituteCtx gamma b)
+
+        -- Just leave these unchanged
+        Unit      -> alpha
+        Scalar _  -> alpha
+        Var _     -> alpha
+
+instL gamma a b = undefined
