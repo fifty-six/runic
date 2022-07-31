@@ -35,9 +35,10 @@ import qualified Prettyprinter.Render.Terminal as P.Term
 import qualified Prettyprinter.Render.Text     as P.Text
 
 import           Data.String                    ( IsString )
-import           Runic.Typecheck                ( SemantError(..)
-                                                , Type(..)
-                                                )
+-- import           Runic.Typecheck                ( SemantError(..)
+--                                                 , Type(..)
+--                                                 )
+import Runic.Types (Type(..))
 
 layoutOptions :: Int -> LayoutOptions
 layoutOptions columns = LayoutOptions { layoutPageWidth = AvailablePerLine columns 1 }

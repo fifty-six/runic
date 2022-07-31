@@ -5,7 +5,7 @@
 
 module Runic.Context (Context, Item(..)) where
 
-import           Runic.Types                    ( Polytype)
+import           Runic.Types                    ( Polytype, Monotype)
 import           Data.Text                      ( Text )
 
 type Identifier = Text
@@ -20,7 +20,7 @@ data Item :: * where
   -- | A variable annotated with a type (x : A)
   Annotation   :: Identifier -> Polytype -> Item
   -- | A solved existential type variable (\vec{\alpha} -> \tau)
-  EVar         :: Identifier -> Polytype -> Item
+  EVar         :: Identifier -> Monotype -> Item
   -- | An unsolved existential variable (\vec{\alpha})
   UnsolvedEVar :: Identifier -> Item
   -- | Marker (weird triangle \vec{alpha})
